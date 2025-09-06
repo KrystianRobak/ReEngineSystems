@@ -116,7 +116,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(SolutionDir)..\ReEngine\Libs\Lib\glfw;$(SolutionDir)..\ReEngine\Libs\Lib\assimp;$(SolutionDir)..\ReEngine\Libs\Lib\glew;$(SolutionDir)..\ReEngine\bin\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opengl32.lib;glfw3.lib;glew32.lib;assimp-vc143-mtd.lib;ReflectionCore.lib;ReEngineCore.lib;ReEngine.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opengl32.lib;glfw3.lib;glew32.lib;assimp-vc143-mtd.lib;ReflectionCore.lib;ReEngineCore.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>$(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\.venv\Scripts\python.exe $(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\CodeGen.py --scan-dir $(ProjectDir) --out-dir $(ProjectDir)generated\ --ms-includes "$(MyIncludes)"</Command>

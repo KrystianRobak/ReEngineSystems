@@ -10,14 +10,11 @@
 #include "ReflectionMacros.h"
 #include "ReflectionEngine.h"
 #include "Logger.h"
-#include "SystemApi/CoordinatorSystemApi.h"
 
 REFSYSTEM()
 class REFLECTION_API RenderOpenGL : public System
 {
 public:
-
-	void Init(Engine::IEngineApi* engine);
 
 	void Update(float dt);
 

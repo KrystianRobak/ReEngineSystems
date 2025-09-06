@@ -1,14 +1,25 @@
 #include "Physics2D.h"
 
-void Physics2D::Init(Engine::IEngineApi* engine)
-{
-	engine_ = engine;
-	LOGF_WARN("%s", "Zainicjowalem siê!")
-}
+#include "Components/Transform.h"
+#include <thread>
 
 void Physics2D::Update(float dt)
 {
-	//LOGF_ERROR
+
+	mEntities;
+	for (Entity entity : mEntities)
+	{
+		Transform* transform = static_cast<Transform*>(engine_->GetComponent(entity, "Transform"));
+
+		glm::vec3 velocity(1.0f, 0.0f, 0.0f);
+
+		transform->position += velocity;
+
+		//LOGF_INFO("Entity: %d has position: x: %.2f | y: %.2f | z: %.2f", entity, transform->position.x, transform->position.y, transform->position.z)
+	}
+	std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	LOGF_INFO("Physics2D Update");
+	return;
 }
 
 void Physics2D::Cleanup()

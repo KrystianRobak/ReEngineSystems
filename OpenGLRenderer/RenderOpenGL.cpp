@@ -1,22 +1,29 @@
 #include "RenderOpenGL.h"
 
 #include "Components/Transform.h"
-
-void RenderOpenGL::Init(Engine::IEngineApi* engine)
-{
-	engine_ = engine;
-	LOGF_WARN("%s", "Zainicjowalem siê!")
-}
+#include "../Commander.h"
+#include <thread>
 
 void RenderOpenGL::Update(float dt)
 {
 	mEntities;
-	for (Entity entity : mEntities)
+	//for (Entity entity : mEntities)
+	//{
+		/*Transform* transform = static_cast<Transform*>(engine_->GetComponent(entity, "Transform"));
+		LOGF_INFO("Entity: %d has position: x: %.2f | y: %.2f | z: %.2f", entity, transform->position.x, transform->position.y, transform->position.z)*/
+	//}
+
+	std::vector<RenderCommand> RenderCommands =  commander_->ConsumeRenderCommands();
+
+	for(RenderCommand command : RenderCommands)
 	{
-		Transform* transform = static_cast<Transform*>(engine_->GetComponent(entity, "Transform"));
-		//LOGF_INFO("Entity: %d has position: x: %d | y: %d | z: %d", entity, transform->position.x, transform->position.y, transform->position.z)
+		auto commandPrimitive = command.GetRenderPrimitive();
+		LOGF_INFO("Transform: %f", commandPrimitive.transform.position.x)
 	}
-	
+
+	LOGF_INFO("RenderOpenGL Update");
+
+	return;
 }
 
 void RenderOpenGL::Cleanup()

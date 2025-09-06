@@ -11,8 +11,6 @@ class REFLECTION_API Physics2D : public System
 {
 public:
 
-	void Init(Engine::IEngineApi* engine);
-
 	void Update(float dt);
 
 	void Cleanup();

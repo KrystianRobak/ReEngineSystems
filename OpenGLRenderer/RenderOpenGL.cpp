@@ -1,7 +1,6 @@
 #include "RenderOpenGL.h"
 
 #include "Components/Transform.h"
-#include "../Commander.h"
 #include <thread>
 
 void RenderOpenGL::Update(float dt)
@@ -13,12 +12,12 @@ void RenderOpenGL::Update(float dt)
 		LOGF_INFO("Entity: %d has position: x: %.2f | y: %.2f | z: %.2f", entity, transform->position.x, transform->position.y, transform->position.z)*/
 	//}
 
-	std::vector<RenderCommand> RenderCommands =  commander_->ConsumeRenderCommands();
+	std::vector<RenderCommand> RenderCommands = commander_.ConsumeRenderCommands();
 
 	for(RenderCommand command : RenderCommands)
 	{
 		auto commandPrimitive = command.GetRenderPrimitive();
-		LOGF_INFO("Transform: %f", commandPrimitive.transform.position.x)
+		LOGF_INFO("Transform")
 	}
 
 	LOGF_INFO("RenderOpenGL Update");

@@ -1,28 +1,126 @@
 #include "RenderOpenGL.h"
 
 #include "Components/Transform.h"
+
 #include <thread>
+#include "MeshData.h"
+#include "StaticMesh.h"
+#include "StaticMeshData.h"
+
+static inline void glfw_error_callback(int error, const char* description)
+{
+    LOGF_ERROR("GLFW Error %d : %s", error, description)
+}
+
+void SetupMesh(MeshData& mesh) {
+
+	if (mesh.isSetup) return;
+
+	mesh.isSetup = true;
+
+    glGenVertexArrays(1, &mesh.VAO);
+    glGenBuffers(1, &mesh.VBO);
+    glGenBuffers(1, &mesh.EBO);
+
+    glBindVertexArray(mesh.VAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
+    glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(Vertex), mesh.vertices.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * sizeof(uint32_t), mesh.indices.data(), GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0); // Position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Position));
+
+    glEnableVertexAttribArray(1); // Normal
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
+
+    glEnableVertexAttribArray(2); // TexCoords
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+
+    glEnableVertexAttribArray(3); // Tangent
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
+
+    glEnableVertexAttribArray(4); // Bitangent
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Bitangent));
+
+    glBindVertexArray(0);
+}
+
+
+glm::mat4 GetModelMatrix(const Transform& t)
+{
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), t.position);
+    model *= glm::mat4_cast(t.rotation);
+    model = glm::scale(model, t.scale);
+    return model;
+}
+
+void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, GLFWwindow* window,AssetManagerApi* AssetManger)
+{
+    engine_ = engine;
+    GLFWwindow* guiContext = window;
+	assetManager_ = std::shared_ptr<AssetManagerApi>(AssetManger);
+
+    shader = std::make_unique<Shader>("shaders/LightSourceShader/LightSources.vs", "shaders/LightSourceShader/LightSources.fs");
+
+    
+
+
+}
 
 void RenderOpenGL::Update(float dt)
 {
-	mEntities;
-	//for (Entity entity : mEntities)
-	//{
-		/*Transform* transform = static_cast<Transform*>(engine_->GetComponent(entity, "Transform"));
-		LOGF_INFO("Entity: %d has position: x: %.2f | y: %.2f | z: %.2f", entity, transform->position.x, transform->position.y, transform->position.z)*/
-	//}
 
-	std::vector<RenderCommand> RenderCommands = commander_.ConsumeRenderCommands();
 
-	for(RenderCommand command : RenderCommands)
-	{
-		auto commandPrimitive = command.GetRenderPrimitive();
-		LOGF_INFO("Transform")
-	}
+    std::vector<RenderCommand> RenderCommands = commander_->ConsumeRenderCommands();
 
-	LOGF_INFO("RenderOpenGL Update");
+    shader->Use();
 
-	return;
+    glm::mat4 view = glm::lookAt(
+        glm::vec3(3.0f, 3.0f, 3.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f)
+    );
+
+    glm::mat4 projection = glm::perspective(
+        glm::radians(45.0f),
+        800.0f / 600.0f,
+        0.1f,
+        100.0f
+    );
+
+
+    shader->SetMat4("View", view);
+    shader->SetMat4("Projection", projection);
+
+
+    for (RenderCommand command : RenderCommands)
+    {
+        auto commandPrimitive = command.GetRenderPrimitive();
+        auto transform = commandPrimitive.transform;
+        Entity entity = commandPrimitive.entity;
+
+        glm::mat4 model = GetModelMatrix(transform);
+        shader->SetMat4("Model", model);
+
+        // Fetch StaticMeshData from entity
+        auto staticMesh = static_cast<StaticMesh*>(engine_->GetComponent(entity, "StaticMesh"));
+        if (!staticMesh) continue;
+
+        for (auto& mesh : staticMesh->StaticMeshHandler->meshes) {
+            SetupMesh(mesh);
+        }
+
+        for (auto& mesh : staticMesh->StaticMeshHandler->meshes) {
+            glBindVertexArray(mesh.VAO);
+            glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
+        }
+    }
+
+    glBindVertexArray(0);
+    glUseProgram(0);
 }
 
 void RenderOpenGL::Cleanup()

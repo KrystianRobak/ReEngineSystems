@@ -9,45 +9,29 @@
 #include "ReflectionEngine.h"
 #include "Logger.h"
 
-#include "Shader.h"
-
 #include "../Commander.h"
 
 REFSYSTEM()
-class REFLECTION_API RenderOpenGL : public System
+class REFLECTION_API Physics3D : public System
 {
 public:
-
-	virtual void InitApi(Editor::IEngineEditorApi* engine, GLFWwindow* window, AssetManagerApi* AssetManger = nullptr) override;
 
 	void Update(float dt);
 
 	void Cleanup();
+
+	REFFUNCTION()
+	void AddForceToEntity(Entity entity, int xForce);
 
 	void SetupModelAndMesh(const Entity& entity);
 
 	void OnLightEntityAdded();
 	void RecompileShader();
 
-	GLFWwindow* GetRenderContext() { return renderContext; }
-
 private:
 	void WindowSizeListener();
 
-	std::unique_ptr<Shader> shader;
-	std::unique_ptr<Shader> LightShader;
-	std::unique_ptr<Shader> AABBshader;
-
-	GLuint mVao{};
-	GLuint mVboVertices{};
-	GLuint mVboNormals{};
-
-	glm::mat4 projection;
-	glm::mat4 view;
-
-
-
-
+	std::vector<std::tuple<Entity, int>> AppliedForces;
 };
 
 

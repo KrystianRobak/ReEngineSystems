@@ -109,7 +109,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;REFLECTIONCORE_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\ReEngine\Libs\Include\assimp;$(SolutionDir)..\ReEngine\Libs\Include\GL;$(SolutionDir)..\ReEngine\Libs\Include\GLFW;$(SolutionDir)..\ReEngine\Libs\Include\glm;$(SolutionDir)..\ReEngine\Libs\Include;$(SolutionDir)..\ReEngine\\ReEngine\Public;$(SolutionDir)..\ReEngine\ReEngineReflectionCore;$(SolutionDir)..\ReEngine\ReEngine\Public\Engine;$(SolutionDir)..\ReEngine\ReEngineCore;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\ReEngine\Libs\Include\assimp;$(SolutionDir)..\ReEngine\Libs\Include\GL;$(SolutionDir)..\ReEngine\Libs\Include\GLFW;$(SolutionDir)..\ReEngine\Libs\Include\glm;$(SolutionDir)..\ReEngine\Libs\Include;$(SolutionDir)..\ReEngine\\ReEngine\Public;$(SolutionDir)..\ReEngine\ReEngineReflectionCore;$(SolutionDir)..\ReEngine\ReEngine\Public\Engine;$(SolutionDir)..\ReEngine\ReEngineCore;$(ProjectDir);$(SolutionDir)..\ReEngine\ReEngine\Public\Engine\Components;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>

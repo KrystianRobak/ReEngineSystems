@@ -21,10 +21,10 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{d63a43a0-7e6c-4f68-8c14-b1333252bba6}</ProjectGuid>
-    <RootNamespace>OpenGLRenderer</RootNamespace>
+    <ProjectGuid>{ca85af68-ba37-4467-beb1-742153003dd1}</ProjectGuid>
+    <RootNamespace>Physics3D</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>OpenGLRenderer</ProjectName>
+    <ProjectName>Physics3D</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -140,10 +140,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(ProjectDir)generated\AllGenerated.cpp" />
-    <ClCompile Include="RenderOpenGL.cpp" />
+    <ClCompile Include="Physics3D.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="RenderOpenGL.h" />
+    <ClInclude Include="Physics3D.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

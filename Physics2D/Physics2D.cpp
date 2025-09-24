@@ -13,7 +13,7 @@ void Physics2D::Update(float dt)
 
 		glm::vec3 velocity(1.0f, 0.0f, 0.0f);
 
-		transform->position += velocity;
+		transform->position += velocity * dt;
 
 		//LOGF_INFO("Entity: %d has position: x: %.2f | y: %.2f | z: %.2f", entity, transform->position.x, transform->position.y, transform->position.z)
 	}

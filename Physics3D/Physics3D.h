@@ -16,6 +16,9 @@ class REFLECTION_API Physics3D : public System
 {
 public:
 
+	REFVARIABLE()
+	std::vector<std::string> ComponentsToRegister = {"Transform"};
+
 	void Update(float dt);
 
 	void Cleanup();

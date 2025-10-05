@@ -122,6 +122,9 @@
       <Command>$(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\.venv\Scripts\python.exe $(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\CodeGen.py --scan-dir $(ProjectDir) --out-dir $(ProjectDir)generated\ --ms-includes "$(MyIncludes)"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
+  <PropertyGroup>
+    <MyIncludes>@(ClCompile->'%(AdditionalIncludeDirectories)')</MyIncludes>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -140,10 +143,36 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(ProjectDir)generated\AllGenerated.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\imgui.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\ImGuizmo.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\imgui_demo.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\imgui_impl_glfw.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\imgui_impl_opengl3.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="Context\OpenGlContext.cpp" />
+    <ClCompile Include="Context\OpenGlFrameBuffer.cpp" />
+    <ClCompile Include="Context\UIContext.cpp" />
     <ClCompile Include="RenderOpenGL.cpp" />
+    <ClCompile Include="Window.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imconfig.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imgui.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\ImGuizmo.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imgui_impl_glfw.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imgui_impl_opengl3.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imgui_impl_opengl3_loader.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imgui_internal.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\..\ReEngine\Libs\Include\imgui\imstb_truetype.h" />
+    <ClInclude Include="Context\OpenGlContext.h" />
+    <ClInclude Include="Context\OpenGlFrameBuffer.h" />
+    <ClInclude Include="Context\UIContext.h" />
     <ClInclude Include="RenderOpenGL.h" />
+    <ClInclude Include="Window.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

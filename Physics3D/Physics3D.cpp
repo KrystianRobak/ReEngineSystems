@@ -66,5 +66,4 @@ extern "C" {
 	{
 		return new Physics3D();
 	}
-
 }

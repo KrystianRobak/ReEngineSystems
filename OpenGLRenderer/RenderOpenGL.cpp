@@ -57,17 +57,21 @@ glm::mat4 GetModelMatrix(const Transform& t)
     return model;
 }
 
-void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, GLFWwindow* window,AssetManagerApi* AssetManger)
+void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger)
 {
     engine_ = engine;
-    GLFWwindow* guiContext = window;
-	assetManager_ = std::shared_ptr<AssetManagerApi>(AssetManger);
 
+    assetManager_ = std::shared_ptr<AssetManagerApi>(AssetManger);
+}
+
+void RenderOpenGL::InitRenderContext(GLFWwindow* window)
+{
     shader = std::make_unique<Shader>("shaders/LightSourceShader/LightSources.vs", "shaders/LightSourceShader/LightSources.fs");
+}
 
-    
-
-
+IWindow* RenderOpenGL::GetWindow()
+{
+    return new Window();
 }
 
 void RenderOpenGL::Update(float dt)

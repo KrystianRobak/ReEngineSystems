@@ -4,21 +4,28 @@
 #include "GLFW/glfw3.h"
 #include <glm/glm.hpp>
 #include "ReflectionCoreExport.h"
-#include "System\System.h"
+#include "RenderSystem.h"
 #include "ReflectionMacros.h"
 #include "ReflectionEngine.h"
 #include "Logger.h"
-
+#include "Window.h"
 #include "Shader.h"
 
 #include "../Commander.h"
 
 REFSYSTEM()
-class REFLECTION_API RenderOpenGL : public System
+class REFLECTION_API RenderOpenGL : public RenderSystem
 {
 public:
 
-	virtual void InitApi(Editor::IEngineEditorApi* engine, GLFWwindow* window, AssetManagerApi* AssetManger = nullptr) override;
+	REFVARIABLE()
+	std::vector<std::string> ComponentsToRegister = { "Transform", "StaticMesh"};
+
+	virtual void InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger = nullptr) override;
+
+	virtual void InitRenderContext(GLFWwindow* window) override;
+
+	virtual IWindow* GetWindow() override;
 
 	void Update(float dt);
 
@@ -28,8 +35,6 @@ public:
 
 	void OnLightEntityAdded();
 	void RecompileShader();
-
-	GLFWwindow* GetRenderContext() { return renderContext; }
 
 private:
 	void WindowSizeListener();

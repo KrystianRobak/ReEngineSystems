@@ -13,10 +13,12 @@ static void Physics3D_AddForceToEntity_Invoke(void* instance, void** args, void*
         return;
     }
     auto* obj = static_cast<Physics3D*>(instance);
-    obj->AddForceToEntity(*static_cast<int*>(args[0]), *static_cast<int*>(args[1]));
+    obj->AddForceToEntity(*static_cast<Entity*>(args[0]), *static_cast<int*>(args[1]));
 }
 
 static std::vector<Reflection::ReflectedFunction> Physics3D_Functions;
+static std::vector<Reflection::ReflectedVariable> Physics3D_Variables;
+static std::vector<Reflection::BaseClassInfo> Physics3D_Bases;
 struct Physics3D_AutoRegister {
     Physics3D_AutoRegister() {
         Reflection::ClassInfo ci;
@@ -29,11 +31,15 @@ struct Physics3D_AutoRegister {
         ci.isStruct = false;
         ci.construct = []() -> void* { return new Physics3D(); };
         ci.destruct = [](void* p) { delete static_cast<Physics3D*>(p); };
+        Physics3D_Bases.clear();
+        if (auto* __base = Reflection::Registry::Instance().FindClass("System"))
+            Physics3D_Bases.push_back(Reflection::BaseClassInfo{ __base, (reinterpret_cast<std::size_t>(static_cast<System*>(reinterpret_cast<Physics3D*>(1))) - 1) });
+        ci.bases = Physics3D_Bases;
         Physics3D_Functions.clear();
         {
             auto* retType = Reflection::Registry::Instance().GetOrCreateType("void");
             std::vector<const Reflection::TypeInfo*> paramTypes;
-            paramTypes.push_back(Reflection::Registry::Instance().GetOrCreateType("int"));
+            paramTypes.push_back(Reflection::Registry::Instance().GetOrCreateType("Entity"));
             paramTypes.push_back(Reflection::Registry::Instance().GetOrCreateType("int"));
             Reflection::ReflectedFunction rf = {
                 "AddForceToEntity", "public",
@@ -45,6 +51,19 @@ struct Physics3D_AutoRegister {
             Physics3D_Functions.push_back(std::move(rf));
         }
         ci.functions = Physics3D_Functions;
+        Physics3D_Variables.clear();
+        auto* vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "ComponentsToRegister", "public",
+                false,
+                offsetof(Physics3D, ComponentsToRegister),
+                vType,
+                "Transform"
+            };
+            Physics3D_Variables.push_back(std::move(rv));
+        }
+        ci.variables = Physics3D_Variables;
         Reflection::Registry::Instance().RegisterSystem(std::move(ci));
     }
 };

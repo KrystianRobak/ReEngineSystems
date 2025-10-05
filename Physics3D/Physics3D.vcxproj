@@ -122,6 +122,9 @@
       <Command>$(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\.venv\Scripts\python.exe $(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\CodeGen.py --scan-dir $(ProjectDir) --out-dir $(ProjectDir)generated\ --ms-includes "$(MyIncludes)"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
+  <PropertyGroup>
+    <MyIncludes>@(ClCompile->'%(AdditionalIncludeDirectories)')</MyIncludes>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>

@@ -7,6 +7,8 @@
 #include "StaticMesh.h"
 #include "StaticMeshData.h"
 
+#include "ReScene.h"
+
 static inline void glfw_error_callback(int error, const char* description)
 {
     LOGF_ERROR("GLFW Error %d : %s", error, description)
@@ -48,20 +50,13 @@ void SetupMesh(MeshData& mesh) {
     glBindVertexArray(0);
 }
 
-
-glm::mat4 GetModelMatrix(const Transform& t)
-{
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), t.position);
-    model *= glm::mat4_cast(t.rotation);
-    model = glm::scale(model, t.scale);
-    return model;
-}
-
 void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger)
 {
     engine_ = engine;
 
     assetManager_ = std::shared_ptr<AssetManagerApi>(AssetManger);
+
+    currentCamera = engine_->GetCurrentScene()->GetDefaultCamera();
 }
 
 void RenderOpenGL::InitRenderContext(GLFWwindow* window)
@@ -82,18 +77,9 @@ void RenderOpenGL::Update(float dt)
 
     shader->Use();
 
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(3.0f, 3.0f, 3.0f),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
-    );
+    glm::mat4 view = ReCamera::GetViewMatrix(*currentCamera);
 
-    glm::mat4 projection = glm::perspective(
-        glm::radians(45.0f),
-        800.0f / 600.0f,
-        0.1f,
-        100.0f
-    );
+	glm::mat4 projection = ReCamera::GetProjectionMatrix(*currentCamera);
 
 
     shader->SetMat4("View", view);

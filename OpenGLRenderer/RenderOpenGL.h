@@ -11,6 +11,8 @@
 #include "Window.h"
 #include "Shader.h"
 
+#include "ReCamera.h"
+
 #include "../Commander.h"
 
 REFSYSTEM()
@@ -50,7 +52,7 @@ private:
 	glm::mat4 projection;
 	glm::mat4 view;
 
-
+	Camera* currentCamera = nullptr;
 
 
 };

@@ -98,13 +98,20 @@ void UIContext::pre_render()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+    ImGuiID dockSpaceId = ImGui::GetID("InvisibleWindowDockSpace");
+    float titleBarHeight = 20.0f;
+
+    ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x, viewport->Pos.y + titleBarHeight));
+    ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, viewport->Size.y - (titleBarHeight*2)));
+
     ImGui::Begin("InvisibleWindow", nullptr, windowFlags);
     ImGui::PopStyleVar(3);
 
-    ImGuiID dockSpaceId = ImGui::GetID("InvisibleWindowDockSpace");
+    
 
     // ---------------- CUSTOM TITLE BAR ----------------
-    float titleBarHeight = 20.0f;
+    
     ImGui::SetNextWindowPos(viewport->Pos);
     ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, titleBarHeight));
 
@@ -117,8 +124,8 @@ void UIContext::pre_render()
         ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.5f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.2f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.10f, 0.10f, 1.0f));
 

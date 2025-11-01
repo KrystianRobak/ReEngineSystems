@@ -49,16 +49,12 @@ public:
 private:
 
     GLFWwindow* window;
-
-    FrameBuffer* frameBuffer;
     
     std::unique_ptr<UIContext> UICtx;
 
     std::unique_ptr<OpenGlContext> RenderCtx;
 
     bool IsRunning;
-
-    MenuType CurrentMode = MenuType::BaseMenu;
 
 	Editor::IEngineEditorApi* EngineApi_ = nullptr;
 };

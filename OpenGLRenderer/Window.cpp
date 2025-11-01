@@ -17,9 +17,9 @@ bool Window::Init(int width, int height, const std::string& title, Editor::IEngi
     LayerManager_ = std::make_unique<ILayerManager>();
     LayerManager_->Init(EngineApi_, ImGui::GetCurrentContext());
     
-    frameBuffer = new OpenGlFrameBuffer();
+    framebuffer = std::make_unique<OpenGlFrameBuffer>();
 
-    frameBuffer->create_buffers(800, 600);
+    framebuffer->create_buffers(width, height);
 
     return IsRunning;
 }
@@ -57,10 +57,11 @@ void Window::on_close()
 void Window::Render()
 {
     Event event(Events::Engine::Renderer::RENDER_FINISHED);
-	event.SetParam<uint64_t>("TextureId", frameBuffer->get_texture());
+	event.SetParam<uint64_t>("TextureId", framebuffer->get_texture());
 
 
     EngineApi_->SendEvent(event);
+	LayerManager_->ProcessPendingOps();
     LayerManager_->OnUpdate();
 }
 
@@ -70,12 +71,12 @@ void Window::PreRender()
 
     UICtx->pre_render();
 
-    frameBuffer->bind();
+    framebuffer->bind();
 }
 
 void Window::PostRender()
 {
-    frameBuffer->unbind();
+    framebuffer->unbind();
 
     UICtx->post_render();
 

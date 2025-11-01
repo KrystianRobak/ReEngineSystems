@@ -88,11 +88,11 @@ void RenderOpenGL::Update(float dt)
 
     for (RenderCommand command : RenderCommands)
     {
-        auto commandPrimitive = command.GetRenderPrimitive();
+        auto commandPrimitive = command.Primitive;
         auto transform = commandPrimitive.transform;
         Entity entity = commandPrimitive.entity;
 
-        glm::mat4 model = GetModelMatrix(transform);
+        glm::mat4 model = ReCamera::GetModelMatrix(transform);
         shader->SetMat4("Model", model);
 
         // Fetch StaticMeshData from entity

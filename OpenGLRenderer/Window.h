@@ -19,7 +19,6 @@ class Window : public IWindow
 public:
     Window() : IsRunning(true), window(nullptr) 
     {
-        UICtx = std::make_unique<UIContext>();
         RenderCtx = std::make_unique<OpenGlContext>();
 		LayerManager_ = std::make_unique<ILayerManager>();
     }
@@ -30,7 +29,7 @@ public:
 
     void PreRender() override;
 
-    void Render() override;
+    void Render(RenderSystem* renderer) override;
 
     void PostRender() override;
 
@@ -49,8 +48,6 @@ public:
 private:
 
     GLFWwindow* window;
-    
-    std::unique_ptr<UIContext> UICtx;
 
     std::unique_ptr<OpenGlContext> RenderCtx;
 

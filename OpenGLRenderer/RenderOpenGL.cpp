@@ -69,6 +69,57 @@ IWindow* RenderOpenGL::GetWindow()
     return new Window();
 }
 
+FrameBuffer* RenderOpenGL::CreateFramebuffer(int32_t width, int32_t height)
+{
+    OpenGlFrameBuffer* newBuffer = new OpenGlFrameBuffer();
+    newBuffer->create_buffers(width, height);
+    return newBuffer;
+}
+
+void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
+{
+    // Safety check
+    if (!camera || !commander) return;
+
+    // Consume commands from the *provided* commander
+    std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
+
+    shader->Use();
+
+    // Use the *provided* camera
+    glm::mat4 view = ReCamera::GetViewMatrix(*camera);
+    glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
+
+    shader->SetMat4("View", view);
+    shader->SetMat4("Projection", projection);
+
+    for (RenderCommand command : RenderCommands)
+    {
+        auto commandPrimitive = command.Primitive;
+        auto transform = (Transform)commandPrimitive.transform;
+        Entity entity = commandPrimitive.entity;
+
+        glm::mat4 model = ReCamera::GetModelMatrix(transform);
+        shader->SetMat4("Model", model);
+
+        // Fetch StaticMeshData from entity
+        auto staticMesh = static_cast<StaticMesh*>(engine_->GetComponent(entity, "StaticMesh"));
+        if (!staticMesh) continue;
+
+        for (auto& mesh : staticMesh->StaticMeshHandler->meshes) {
+            SetupMesh(mesh);
+        }
+
+        for (auto& mesh : staticMesh->StaticMeshHandler->meshes) {
+            glBindVertexArray(mesh.VAO);
+            glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
+        }
+    }
+
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
 void RenderOpenGL::Update(float dt)
 {
 

@@ -1,4 +1,6 @@
 #pragma once
+
+#include "Window/IWindow.h"
 #include "Window/RenderContext.h"
 
 class OpenGlContext : public RenderContext
@@ -12,5 +14,7 @@ public:
     void post_render() override;
 
     void end() override;
+
+    friend class IWindow;
 };
 

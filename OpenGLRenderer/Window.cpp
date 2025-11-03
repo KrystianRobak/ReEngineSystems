@@ -12,8 +12,6 @@ bool Window::Init(int width, int height, const std::string& title, Editor::IEngi
 
     RenderCtx->init(this);
 
-    UICtx->init(this);
-
     LayerManager_ = std::make_unique<ILayerManager>();
     LayerManager_->Init(EngineApi_, ImGui::GetCurrentContext());
     
@@ -26,8 +24,6 @@ bool Window::Init(int width, int height, const std::string& title, Editor::IEngi
 
 Window::~Window()
 {
-    UICtx->end();
-
     RenderCtx->end();
 }
 
@@ -45,8 +41,6 @@ void Window::on_resize(int width, int height)
 {
     this->width = width;
     this->height = height;
-
-    Render();
 }
 
 void Window::on_close()
@@ -54,7 +48,7 @@ void Window::on_close()
     IsRunning = false;
 }
 
-void Window::Render()
+void Window::Render(RenderSystem* renderer)
 {
     Event event(Events::Engine::Renderer::RENDER_FINISHED);
 	event.SetParam<uint64_t>("TextureId", framebuffer->get_texture());
@@ -69,16 +63,12 @@ void Window::PreRender()
 {
     RenderCtx->pre_render();
 
-    UICtx->pre_render();
-
     framebuffer->bind();
 }
 
 void Window::PostRender()
 {
     framebuffer->unbind();
-
-    UICtx->post_render();
 
     RenderCtx->post_render();
 }

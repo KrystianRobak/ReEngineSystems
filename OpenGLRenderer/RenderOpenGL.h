@@ -13,7 +13,7 @@
 
 #include "ReCamera.h"
 
-#include "../Commander.h"
+#include "Commander.h"
 
 REFSYSTEM()
 class REFLECTION_API RenderOpenGL : public RenderSystem
@@ -28,6 +28,10 @@ public:
 	virtual void InitRenderContext(GLFWwindow* window) override;
 
 	virtual IWindow* GetWindow() override;
+
+	virtual FrameBuffer* CreateFramebuffer(int32_t, int32_t) override;
+
+	virtual void RenderViewport(Camera* camera, Commander* commander) override;
 
 	void Update(float dt);
 
@@ -54,7 +58,7 @@ private:
 
 	Camera* currentCamera = nullptr;
 
-
+	UIContext UiCtx;
 };
 
 

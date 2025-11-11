@@ -10,6 +10,7 @@
 #include "Logger.h"
 #include "Window.h"
 #include "Shader.h"
+#include "OpenGLViewport.h"
 
 #include "ReCamera.h"
 
@@ -25,13 +26,17 @@ public:
 
 	virtual void InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger = nullptr) override;
 
-	virtual void InitRenderContext(GLFWwindow* window) override;
+	virtual void InitRenderContext(IWindow* window) override;
 
 	virtual IWindow* GetWindow() override;
+
+	virtual IViewport* CreateViewport() override;
 
 	void Update(float dt);
 
 	void Cleanup();
+
+	void RenderViewport(Camera* camera, Commander* commander);
 
 	void SetupModelAndMesh(const Entity& entity);
 

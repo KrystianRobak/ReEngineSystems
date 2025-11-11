@@ -59,7 +59,7 @@ void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<Ass
     currentCamera = engine_->GetCurrentScene()->GetDefaultCamera();
 }
 
-void RenderOpenGL::InitRenderContext(GLFWwindow* window)
+void RenderOpenGL::InitRenderContext(IWindow* window)
 {
     shader = std::make_unique<Shader>("shaders/LightSourceShader/LightSources.vs", "shaders/LightSourceShader/LightSources.fs");
 }
@@ -69,17 +69,25 @@ IWindow* RenderOpenGL::GetWindow()
     return new Window();
 }
 
+IViewport* RenderOpenGL::CreateViewport()
+{
+    return new OpenGLViewport(1920, 1080);
+}
+
 void RenderOpenGL::Update(float dt)
 {
+}
 
+void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
+{
 
-    std::vector<RenderCommand> RenderCommands = commander_->ConsumeRenderCommands();
+    std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
 
     shader->Use();
 
-    glm::mat4 view = ReCamera::GetViewMatrix(*currentCamera);
+    glm::mat4 view = ReCamera::GetViewMatrix(*camera);
 
-	glm::mat4 projection = ReCamera::GetProjectionMatrix(*currentCamera);
+    glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
 
 
     shader->SetMat4("View", view);

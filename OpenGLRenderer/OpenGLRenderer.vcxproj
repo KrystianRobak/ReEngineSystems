@@ -154,6 +154,7 @@
     <ClCompile Include="Context\OpenGlContext.cpp" />
     <ClCompile Include="Context\OpenGlFrameBuffer.cpp" />
     <ClCompile Include="Context\UIContext.cpp" />
+    <ClCompile Include="OpenGLViewport.cpp" />
     <ClCompile Include="RenderOpenGL.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
@@ -171,6 +172,7 @@
     <ClInclude Include="Context\OpenGlContext.h" />
     <ClInclude Include="Context\OpenGlFrameBuffer.h" />
     <ClInclude Include="Context\UIContext.h" />
+    <ClInclude Include="OpenGLViewport.h" />
     <ClInclude Include="RenderOpenGL.h" />
     <ClInclude Include="Window.h" />
   </ItemGroup>

@@ -26,7 +26,7 @@ public:
 
     ~Window();
 
-    bool Init(int width, int height, const std::string& title, Editor::IEngineEditorApi* EngineApi) override;
+    bool Init(int width, int height, const std::string& title, Editor::IEngineEditorApi* EngineApi, IApplicationApi* ApplicationApi) override;
 
     void PreRender() override;
 
@@ -56,6 +56,6 @@ private:
 
     bool IsRunning;
 
-	Editor::IEngineEditorApi* EngineApi_ = nullptr;
+
 };
 

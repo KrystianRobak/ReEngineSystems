@@ -1,7 +1,7 @@
 #include "Window.h"
 
 
-bool Window::Init(int width, int height, const std::string& title, Editor::IEngineEditorApi* EngineApi)
+bool Window::Init(int width, int height, const std::string& title, Editor::IEngineEditorApi* EngineApi, IApplicationApi* ApplicationApi)
 {
    
     this->width = width;
@@ -9,17 +9,14 @@ bool Window::Init(int width, int height, const std::string& title, Editor::IEngi
     this->title = title;
 
     EngineApi_ = EngineApi;
+	ApplicationApi_ = ApplicationApi;
 
     RenderCtx->init(this);
 
     UICtx->init(this);
 
     LayerManager_ = std::make_unique<ILayerManager>();
-    LayerManager_->Init(EngineApi_, ImGui::GetCurrentContext());
-    
-    framebuffer = std::make_unique<OpenGlFrameBuffer>();
-
-    framebuffer->create_buffers(width, height);
+    LayerManager_->Init(EngineApi_, ApplicationApi_, ImGui::GetCurrentContext());
 
     return IsRunning;
 }
@@ -56,11 +53,6 @@ void Window::on_close()
 
 void Window::Render()
 {
-    Event event(Events::Engine::Renderer::RENDER_FINISHED);
-	event.SetParam<uint64_t>("TextureId", framebuffer->get_texture());
-
-
-    EngineApi_->SendEvent(event);
 	LayerManager_->ProcessPendingOps();
     LayerManager_->OnUpdate();
 }
@@ -70,14 +62,10 @@ void Window::PreRender()
     RenderCtx->pre_render();
 
     UICtx->pre_render();
-
-    framebuffer->bind();
 }
 
 void Window::PostRender()
 {
-    framebuffer->unbind();
-
     UICtx->post_render();
 
     RenderCtx->post_render();

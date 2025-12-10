@@ -31,7 +31,7 @@ void Physics3D::Update(float dt)
 
 	}
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	//std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	//LOGF_INFO("Physics3D Update");
 	return;
 }

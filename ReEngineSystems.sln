@@ -13,6 +13,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ReEngineAiAssistant", "ReEn
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ReEngineModule1", "ReEngineModule1\ReEngineModule1.vcxproj", "{84FDEDC2-3DD7-4186-97D5-138CD7F5E5A6}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Animator", "Animator\Animator.vcxproj", "{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -61,6 +63,14 @@ Global
 		{84FDEDC2-3DD7-4186-97D5-138CD7F5E5A6}.Release|x64.Build.0 = Release|x64
 		{84FDEDC2-3DD7-4186-97D5-138CD7F5E5A6}.Release|x86.ActiveCfg = Release|Win32
 		{84FDEDC2-3DD7-4186-97D5-138CD7F5E5A6}.Release|x86.Build.0 = Release|Win32
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Debug|x64.ActiveCfg = Debug|x64
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Debug|x64.Build.0 = Debug|x64
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Debug|x86.ActiveCfg = Debug|Win32
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Debug|x86.Build.0 = Debug|Win32
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Release|x64.ActiveCfg = Release|x64
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Release|x64.Build.0 = Release|x64
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Release|x86.ActiveCfg = Release|Win32
+		{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

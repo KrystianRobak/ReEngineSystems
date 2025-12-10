@@ -6,6 +6,7 @@
 #include "MeshData.h"
 #include "StaticMesh.h"
 #include "StaticMeshData.h"
+#include "MaterialSystem/Material.h"
 
 #include "ReScene.h"
 
@@ -69,9 +70,9 @@ IWindow* RenderOpenGL::GetWindow()
     return new Window();
 }
 
-IViewport* RenderOpenGL::CreateViewport()
+IViewport* RenderOpenGL::CreateViewport(int width, int height)
 {
-    return new OpenGLViewport(1920, 1080);
+    return new OpenGLViewport(width, height);
 }
 
 void RenderOpenGL::Update(float dt)
@@ -80,41 +81,67 @@ void RenderOpenGL::Update(float dt)
 
 void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
 {
-
+    assetManager_->UploadPendingResources();
     std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
 
-    shader->Use();
-
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
-
     glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
 
-
-    shader->SetMat4("View", view);
-    shader->SetMat4("Projection", projection);
-
-
-    for (RenderCommand command : RenderCommands)
+    for (const RenderCommand& command : RenderCommands)
     {
-        auto commandPrimitive = command.Primitive;
-        auto transform = commandPrimitive.transform;
-        Entity entity = commandPrimitive.entity;
+        const RenderPrimitive& prim = command.Primitive;
 
-        glm::mat4 model = ReCamera::GetModelMatrix(transform);
-        shader->SetMat4("Model", model);
+        if (command.Primitive.MaterialId == 1200)
+        {
+            // ... existing default shader logic ...
+            shader->Use();
+            shader->SetMat4("View", view);
+            shader->SetMat4("Projection", projection);
+            shader->SetMat4("Model", prim.ModelMatrix);
+        }
+        else
+        {
+            CompiledMaterial* material = assetManager_->GetMaterial(command.Primitive.MaterialId);
+            if (!material || !material->GLShader) continue;
 
-        // Fetch StaticMeshData from entity
-        auto staticMesh = static_cast<StaticMesh*>(engine_->GetComponent(entity, "StaticMesh"));
-        if (!staticMesh) continue;
+            material->GLShader->Use();
+            material->GLShader->SetMat4("View", view);
+            material->GLShader->SetMat4("Projection", projection);
+            material->GLShader->SetMat4("Model", prim.ModelMatrix);
 
-        for (auto& mesh : staticMesh->StaticMeshHandler->meshes) {
-            SetupMesh(mesh);
+            // 1. Set Uniform Parameters (Floats/Vecs)
+            for (auto& [name, value] : material->m_Parameters)
+            {
+                material->GLShader->SetVec4(name, value);
+            }
+
+            // 2. --- NEW TEXTURE BINDING LOGIC ---
+            int textureSlot = 0;
+            for (auto& [samplerName, textureResource] : material->textures)
+            {
+                if (textureResource && textureResource->uploaded)
+                {
+                    // Activate proper texture unit (0, 1, 2...)
+                    glActiveTexture(GL_TEXTURE0 + textureSlot);
+
+                    // Bind the GPU Texture ID
+                    glBindTexture(GL_TEXTURE_2D, textureResource->id);
+
+                    // Tell the shader that 'samplerName' (e.g., "Tex_S1_Tex") 
+                    // should look at texture unit 'textureSlot'
+                    material->GLShader->SetInt(samplerName, textureSlot);
+
+                    textureSlot++;
+                }
+            }
+            // -------------------------------------
         }
 
-        for (auto& mesh : staticMesh->StaticMeshHandler->meshes) {
-            glBindVertexArray(mesh.VAO);
-            glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, 0);
-        }
+        MeshResource* res = assetManager_->GetMeshResource(prim.MeshResourceId);
+        if (!res || !res->uploaded) continue;
+
+        glBindVertexArray(res->VAO);
+        glDrawElements(GL_TRIANGLES, res->indexCount, GL_UNSIGNED_INT, 0);
     }
 
     glBindVertexArray(0);

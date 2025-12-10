@@ -14,8 +14,6 @@
 
 #include "ReCamera.h"
 
-#include "../Commander.h"
-
 REFSYSTEM()
 class REFLECTION_API RenderOpenGL : public RenderSystem
 {
@@ -30,7 +28,7 @@ public:
 
 	virtual IWindow* GetWindow() override;
 
-	virtual IViewport* CreateViewport() override;
+	virtual IViewport* CreateViewport(int width, int height) override;
 
 	void Update(float dt);
 

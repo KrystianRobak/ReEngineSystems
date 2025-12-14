@@ -57,7 +57,31 @@ private:
 
 	Camera* currentCamera = nullptr;
 
+private:
+	// --- G-Buffer Resources (Pass 2 Targets) ---
+	GLuint gBuffer;
+	GLuint gPosition, gNormal, gAlbedoSpec; // Textures for geometry data
+	GLuint rboDepth; // Depth buffer for geometry
+	int currentWidth = 0, currentHeight = 0;
 
+	// --- Shadow Map Resources (Pass 1 Targets) ---
+	GLuint shadowMapFBO;
+	GLuint shadowMapTexture;
+	const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
+
+	// --- Shaders ---
+	std::unique_ptr<Shader> geometryPassShader; // Writes to G-Buffer
+	std::unique_ptr<Shader> lightingPassShader; // Reads G-Buffer -> Final Color
+	std::unique_ptr<Shader> shadowMapShader;    // Depth only pass
+
+	// --- Screen Quad for Lighting Pass ---
+	GLuint quadVAO = 0;
+	GLuint quadVBO;
+	void RenderQuad();
+
+	// --- Helpers ---
+	void InitGBuffer(int width, int height);
+	void InitShadowMap();
 };
 
 

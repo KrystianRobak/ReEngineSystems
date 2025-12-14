@@ -11,31 +11,41 @@
 
 #include "../Commander.h"
 
+#pragma once
+
+#include "Collision/Octree.h" 
+
 REFSYSTEM()
 class REFLECTION_API Physics3D : public System
 {
 public:
+    // Register the new components so the engine knows about them
+    REFVARIABLE()
+        std::vector<std::string> ComponentsToRegister = { "Transform", "RigidBody", "BoxCollider" };
 
-	REFVARIABLE()
-	std::vector<std::string> ComponentsToRegister = {"Transform"};
+    void Update(float dt);
+    void Cleanup();
 
-	void Update(float dt);
-
-	void Cleanup();
-
-	REFFUNCTION()
-	void AddForceToEntity(Entity entity, int xForce);
-
-	void SetupModelAndMesh(const Entity& entity);
-
-	void OnLightEntityAdded();
-	void RecompileShader();
+    REFFUNCTION()
+        void AddForceToEntity(Entity entity, glm::vec3 force); // Changed to vec3 for 3D
 
 private:
-	void WindowSizeListener();
+    glm::vec3 gravity = glm::vec3(0.0f, -9.81f, 0.0f);
 
-	std::vector<std::tuple<Entity, int>> AppliedForces;
+    struct Manifold {
+        Entity entityA;
+        Entity entityB;
+        glm::vec3 normal; // Points from A to B
+        float penetration;
+    };
+
+    // Helper to detect penetration depth and normal between two AABBs
+    bool GetCollisionManifold(const AABB& a, const AABB& b, Manifold& manifold);
+
+    void CheckDynamicVsHeightfield(Entity dynamicEntity, Entity terrainEntity);
+
+    // Helper to physically separate objects and update velocities
+    void ResolveCollision(Manifold& m);
 };
 
-
-extern "C" REFLECTION_API System* CreateSystem();
+extern "C" REFLECTION_API System * CreateSystem();

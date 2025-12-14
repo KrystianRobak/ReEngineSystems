@@ -18,12 +18,12 @@
     <ClCompile Include="$(ProjectDir)generated\AllGenerated.cpp">
       <Filter>Pliki źródłowe</Filter>
     </ClCompile>
-    <ClCompile Include="Physics3D.cpp">
+    <ClCompile Include="WorldGenSystem.cpp">
       <Filter>Pliki źródłowe</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Physics3D.h">
+    <ClInclude Include="WorldGenSystem.h">
       <Filter>Pliki nagłówkowe</Filter>
     </ClInclude>
   </ItemGroup>

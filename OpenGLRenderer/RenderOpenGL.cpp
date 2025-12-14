@@ -63,6 +63,13 @@ void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<Ass
 void RenderOpenGL::InitRenderContext(IWindow* window)
 {
     shader = std::make_unique<Shader>("shaders/LightSourceShader/LightSources.vs", "shaders/LightSourceShader/LightSources.fs");
+
+    geometryPassShader = std::make_unique<Shader>("shaders/Deferred/GBuffer.vs", "shaders/Deferred/GBuffer.fs");
+    lightingPassShader = std::make_unique<Shader>("shaders/Deferred/DeferredLight.vs", "shaders/Deferred/DeferredLight.fs");
+    shadowMapShader = std::make_unique<Shader>("shaders/Shadows/ShadowMap.vs", "shaders/Shadows/ShadowMap.fs");
+
+    InitShadowMap();
+    InitGBuffer(1920, 1080); // Initial size, should match viewport
 }
 
 IWindow* RenderOpenGL::GetWindow()
@@ -86,6 +93,97 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
 
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
     glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
+
+    // === Define Light Variables (Todo: Get from Commander/ECS) ===
+    glm::vec3 lightPos(-20.0f, 50.0f, -10.0f); // Directional Light Source
+    glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 1.0f, 100.0f);
+    glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+    // ====================================================
+    // PASS 1: Shadow Map Generation
+    // ====================================================
+    glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    shadowMapShader->Use();
+    shadowMapShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
+
+    // Render Scene (Depth Only)
+    for (const auto& cmd : RenderCommands) {
+        MeshResource* res = assetManager_->GetMeshResource(cmd.Primitive.MeshResourceId);
+        if (res && res->uploaded) {
+            shadowMapShader->SetMat4("model", cmd.Primitive.ModelMatrix);
+            glBindVertexArray(res->VAO);
+            glDrawElements(GL_TRIANGLES, res->indexCount, GL_UNSIGNED_INT, 0);
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // ====================================================
+    // PASS 2: Geometry Pass (G-Buffer)
+    // ====================================================
+    glViewport(0, 0, currentWidth, currentHeight);
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    geometryPassShader->Use();
+    geometryPassShader->SetMat4("view", view);
+    geometryPassShader->SetMat4("projection", projection);
+
+    for (const auto& cmd : RenderCommands) {
+        // Material Handling
+        CompiledMaterial* mat = assetManager_->GetMaterial(cmd.Primitive.MaterialId);
+
+        // Use default shader logic if material is missing, or bind specific material properties
+        // IMPORTANT: The Geometry Shader writes to 3 textures, not the screen!
+
+        // ... (Bind Albedo/Normal/Specular textures similar to original code) ...
+
+        geometryPassShader->SetMat4("model", cmd.Primitive.ModelMatrix);
+
+        MeshResource* res = assetManager_->GetMeshResource(cmd.Primitive.MeshResourceId);
+        if (res && res->uploaded) {
+            glBindVertexArray(res->VAO);
+            glDrawElements(GL_TRIANGLES, res->indexCount, GL_UNSIGNED_INT, 0);
+        }
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
+    // ====================================================
+    // PASS 3: Lighting Pass (Deferred)
+    // ====================================================
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    lightingPassShader->Use();
+
+    // Bind G-Buffer Textures for Reading
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    lightingPassShader->SetInt("gPosition", 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    lightingPassShader->SetInt("gNormal", 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+    lightingPassShader->SetInt("gAlbedoSpec", 2);
+
+    // Bind Shadow Map
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
+    lightingPassShader->SetInt("shadowMap", 3);
+
+    // Set Lighting Uniforms
+    lightingPassShader->SetVec3("viewPos", camera->CameraTransform.position);
+    lightingPassShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
+    lightingPassShader->SetVec3("lightPos", lightPos);
+    lightingPassShader->SetVec3("lightColor", glm::vec3(1.0, 0.95, 0.9));
+
+    // Render Full Screen Quad
+    RenderQuad();
 
     for (const RenderCommand& command : RenderCommands)
     {
@@ -166,6 +264,104 @@ void RenderOpenGL::RecompileShader()
 
 void RenderOpenGL::WindowSizeListener()
 {
+}
+
+void RenderOpenGL::RenderQuad()
+{
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+            // positions        // texture Coords
+            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+             1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+             1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
+void RenderOpenGL::InitGBuffer(int width, int height)
+{
+    currentWidth = width;
+    currentHeight = height;
+
+    glGenFramebuffers(1, &gBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+
+    // 1. Position Buffer (High Precision Float for world coordinates)
+    glGenTextures(1, &gPosition);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+
+    // 2. Normal Buffer (Float precision for smooth lighting)
+    glGenTextures(1, &gNormal);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+
+    // 3. Albedo + Specular Buffer (Standard Color)
+    glGenTextures(1, &gAlbedoSpec);
+    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
+
+    // Tell OpenGL to draw to these 3 attachments
+    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
+
+    // 4. Depth Buffer (Standard Renderbuffer)
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "Framebuffer not complete!" << std::endl;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void RenderOpenGL::InitShadowMap()
+{
+    glGenFramebuffers(1, &shadowMapFBO);
+
+    glGenTextures(1, &shadowMapTexture);
+    glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
+    // Depth component only, 2048x2048 resolution
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // Clamp to border to prevent artifacts outside shadow map
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMapTexture, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 extern "C" {

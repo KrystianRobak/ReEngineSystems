@@ -11,6 +11,10 @@
 
 #include "../Commander.h"
 
+class AssimpNodeData;
+struct SkeletalMeshComponent;
+class Animation;
+
 REFSYSTEM()
 class REFLECTION_API Animator : public System
 {
@@ -25,6 +29,7 @@ public:
 
 
 private:
+    void CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform, SkeletalMeshComponent* component, Animation* animation);
 };
 
 

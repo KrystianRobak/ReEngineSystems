@@ -22,7 +22,7 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{84fdedc2-3dd7-4186-97d5-138cd7f5e5a6}</ProjectGuid>
-    <RootNamespace>ReEngineModule1</RootNamespace>
+    <RootNamespace>WorldGeneration</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>WorldGeneration</ProjectName>
   </PropertyGroup>

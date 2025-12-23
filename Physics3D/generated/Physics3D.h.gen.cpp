@@ -13,7 +13,7 @@ static void Physics3D_AddForceToEntity_Invoke(void* instance, void** args, void*
         return;
     }
     auto* obj = static_cast<Physics3D*>(instance);
-    obj->AddForceToEntity(*static_cast<Entity*>(args[0]), *static_cast<int*>(args[1]));
+    obj->AddForceToEntity(*static_cast<Entity*>(args[0]), *static_cast<glm::vec3*>(args[1]));
 }
 
 static std::vector<Reflection::ReflectedFunction> Physics3D_Functions;
@@ -40,7 +40,7 @@ struct Physics3D_AutoRegister {
             auto* retType = Reflection::Registry::Instance().GetOrCreateType("void");
             std::vector<const Reflection::TypeInfo*> paramTypes;
             paramTypes.push_back(Reflection::Registry::Instance().GetOrCreateType("Entity"));
-            paramTypes.push_back(Reflection::Registry::Instance().GetOrCreateType("int"));
+            paramTypes.push_back(Reflection::Registry::Instance().GetOrCreateType("glm::vec3"));
             Reflection::ReflectedFunction rf = {
                 "AddForceToEntity", "public",
                 false, false, false,
@@ -59,7 +59,7 @@ struct Physics3D_AutoRegister {
                 false,
                 offsetof(Physics3D, ComponentsToRegister),
                 vType,
-                "Transform"
+                "Transform, RigidBody, BoxCollider"
             };
             Physics3D_Variables.push_back(std::move(rv));
         }

@@ -2,7 +2,7 @@
 #include "Components/Transform.h"
 #include "Components/RigidBody.h"
 #include "Components/BoxCollider.h"
-#include "Components/StaticMesh.h" // Assuming you have a component to hold the mesh
+#include "Components/StaticMesh.h"
 #include "AssetManager.h"
 #include "StaticMeshData.h"
 #include "Components/HeightfieldCollider.h"
@@ -92,29 +92,30 @@ void WorldGenSystem::GenerateTerrain(int width, int depth, float scale, float he
     staticMeshData->aabbMax = max;
     staticMeshData->path = "Generated_Terrain"; // Virtual path
 
-    // Register with AssetManager to get a GPU handle
-    MeshResourceId meshId = engine_->
-
     // 4. Create Entity in Scene
     Entity terrain = engine_->CreateEntity();
+	engine_->AddComponent(terrain, "Transform");
 
     // Add Transform
-    Transform* t = engine_->AddComponent<Transform>(terrain);
+    Transform* t = static_cast<Transform*>(engine_->GetComponent(terrain, "Transform"));
     t->position = glm::vec3(0, -5, 0); // Move down slightly
     t->scale = glm::vec3(1, 1, 1);
 
     // Add Mesh Component
     // Assuming you have a StaticMeshComponent that takes an ID
-    StaticMesh* meshComp = engine_->AddComponent<StaticMesh>(terrain);
-    meshComp->MeshResourceId = meshId;
+    engine_->AddComponent(terrain, "StaticMesh");
+    StaticMesh* meshComp = static_cast<StaticMesh*>(engine_->GetComponent(terrain, "StaticMesh"));
+    meshComp->MeshResourceId = assetManager_->GetCurrentMeshId();
     // meshComp->materialId = ... (Assign a default material here)
 
     // Add Physics (Floor)
-    RigidBody* rb = engine_->AddComponent<RigidBody>(terrain);
+    engine_->AddComponent(terrain, "RigidBody");
+    RigidBody* rb = static_cast<RigidBody*>(engine_->GetComponent(terrain, "RigidBody"));
     rb->isStatic = true; // IMPORTANT: The floor must be static
 
     // 5. Add Optimized Heightfield Collider (REPLACEMENT FOR BOXCOLLIDER)
-    HeightfieldCollider* hf = engine_->AddComponent<HeightfieldCollider>(terrain);
+    engine_->AddComponent(terrain, "HeightfieldCollider");
+    HeightfieldCollider* hf = static_cast<HeightfieldCollider*>(engine_->GetComponent(terrain, "HeightfieldCollider"));
     hf->width = width;
     hf->depth = depth;
     hf->scale = scale;

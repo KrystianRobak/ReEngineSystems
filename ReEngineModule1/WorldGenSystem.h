@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <string>
+#include "ReflectionCoreExport.h"
 #include "System/System.h"
 #include "ReflectionMacros.h"
 
@@ -12,11 +13,11 @@ public:
         std::vector<std::string> ComponentsToRegister = {};
 
     void Update(float dt) override {}
-    void Cleanup() override {}
+    void Cleanup() {}
 
     // Main function to call from your Game/Editor
     REFFUNCTION()
-        void GenerateTerrain(int width, int depth, float scale, float heightMultiplier);
+    void GenerateTerrain(int width, int depth, float scale, float heightMultiplier);
 
 private:
     // Simple pseudo-random noise function

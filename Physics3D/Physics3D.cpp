@@ -262,10 +262,6 @@ void Physics3D::AddForceToEntity(Entity entity, glm::vec3 force)
 }
 
 void Physics3D::Cleanup() {}
-void Physics3D::SetupModelAndMesh(const Entity& entity) {}
-void Physics3D::OnLightEntityAdded() {}
-void Physics3D::RecompileShader() {}
-void Physics3D::WindowSizeListener() {}
 
 extern "C" {
     REFLECTION_API System* CreateSystem()

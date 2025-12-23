@@ -1,5 +1,5 @@
 #pragma once
-
+#pragma once
 #include <GL/glew.h>
 #include "GLFW/glfw3.h"
 #include <glm/glm.hpp>
@@ -11,7 +11,7 @@
 
 #include "../Commander.h"
 
-#pragma once
+
 
 #include "Collision/Octree.h" 
 

@@ -26,6 +26,17 @@ static void on_key_callback(GLFWwindow* window, int key, int scancode, int actio
     //}
 }
 
+static void OnFileDropCallback(GLFWwindow* window, int count, const char** paths)
+{
+    auto pWindow = static_cast<IWindow*>(glfwGetWindowUserPointer(window));
+    for (int i = 0; i < count; i++)
+    {
+        Event FileDropEvent(Events::Window::FILE_DROPPED);
+        FileDropEvent.SetParam<std::string>("FilePath", std::string(paths[i]));
+        pWindow->EngineApi_->SendEvent(FileDropEvent);
+    }
+}
+
 static inline void glfw_error_callback(int error, const char* description)
 {
    LOGF_ERROR("GLFW Error %d : %s",  error, description)
@@ -71,7 +82,9 @@ bool OpenGlContext::init(IWindow* window)
     /* Initialize the library */
     glfwSetWindowSizeCallback(glwindow, on_window_size_callback);
     glfwSetKeyCallback(glwindow, on_key_callback);
+    glfwSetDropCallback(glwindow, OnFileDropCallback);
     /*glfwSetScrollCallback(glWindow, on_scroll_callback);
+    * 
     
     glfwSetWindowCloseCallback(glWindow, on_window_close_callback);*/
     return true;

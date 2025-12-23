@@ -88,7 +88,6 @@ void RenderOpenGL::Update(float dt)
 
 void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
 {
-    assetManager_->UploadPendingResources();
     std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
 
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
@@ -112,7 +111,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
 
     // Render Scene (Depth Only)
     for (const auto& cmd : RenderCommands) {
-        MeshResource* res = assetManager_->GetMeshResource(cmd.Primitive.MeshResourceId);
+        auto& res = cmd.Primitive.Mesh;
         if (res && res->uploaded) {
             shadowMapShader->SetMat4("model", cmd.Primitive.ModelMatrix);
             glBindVertexArray(res->VAO);
@@ -143,7 +142,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
 
         geometryPassShader->SetMat4("model", cmd.Primitive.ModelMatrix);
 
-        MeshResource* res = assetManager_->GetMeshResource(cmd.Primitive.MeshResourceId);
+        auto& res = cmd.Primitive.Mesh;
         if (res && res->uploaded) {
             glBindVertexArray(res->VAO);
             glDrawElements(GL_TRIANGLES, res->indexCount, GL_UNSIGNED_INT, 0);
@@ -235,7 +234,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander)
             // -------------------------------------
         }
 
-        MeshResource* res = assetManager_->GetMeshResource(prim.MeshResourceId);
+        auto& res = command.Primitive.Mesh;
         if (!res || !res->uploaded) continue;
 
         glBindVertexArray(res->VAO);

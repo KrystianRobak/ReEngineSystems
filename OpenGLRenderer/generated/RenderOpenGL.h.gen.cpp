@@ -36,6 +36,66 @@ struct RenderOpenGL_AutoRegister {
             };
             RenderOpenGL_Variables.push_back(std::move(rv));
         }
+         vType = Reflection::Registry::Instance().GetOrCreateType("unsigned int");
+        {
+            Reflection::ReflectedVariable rv = {
+                "gBuffer", "public",
+                false,
+                offsetof(RenderOpenGL, gBuffer),
+                vType
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("unsigned int");
+        {
+            Reflection::ReflectedVariable rv = {
+                "gPosition", "public",
+                false,
+                offsetof(RenderOpenGL, gPosition),
+                vType
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("unsigned int");
+        {
+            Reflection::ReflectedVariable rv = {
+                "gNormal", "public",
+                false,
+                offsetof(RenderOpenGL, gNormal),
+                vType
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("unsigned int");
+        {
+            Reflection::ReflectedVariable rv = {
+                "gAlbedoSpec", "public",
+                false,
+                offsetof(RenderOpenGL, gAlbedoSpec),
+                vType
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("unsigned int");
+        {
+            Reflection::ReflectedVariable rv = {
+                "rboDepth", "public",
+                false,
+                offsetof(RenderOpenGL, rboDepth),
+                vType
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("unsigned int");
+        {
+            Reflection::ReflectedVariable rv = {
+                "shadowMapTexture", "public",
+                false,
+                offsetof(RenderOpenGL, shadowMapTexture),
+                vType
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
         ci.variables = RenderOpenGL_Variables;
         Reflection::Registry::Instance().RegisterSystem(std::move(ci));
     }

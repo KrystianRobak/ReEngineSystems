@@ -34,7 +34,7 @@ public:
 
 	void Cleanup();
 
-	void RenderViewport(Camera* camera, Commander* commander);
+	void RenderViewport(Camera* camera, Commander* commander, FrameBuffer* framebuffer);
 
 	void SetupModelAndMesh(const Entity& entity);
 
@@ -56,17 +56,29 @@ private:
 	glm::mat4 view;
 
 	Camera* currentCamera = nullptr;
-
-private:
+public:
 	// --- G-Buffer Resources (Pass 2 Targets) ---
-	GLuint gBuffer;
-	GLuint gPosition, gNormal, gAlbedoSpec; // Textures for geometry data
-	GLuint rboDepth; // Depth buffer for geometry
+	REFVARIABLE()
+		GLuint gBuffer;
+	REFVARIABLE()
+		GLuint gPosition;
+	REFVARIABLE()
+		GLuint gNormal;
+	REFVARIABLE()
+		GLuint gAlbedoSpec;
+	REFVARIABLE() // Textures for geometry data
+		GLuint rboDepth; // Depth buffer for geometry
+	REFVARIABLE()
+		GLuint shadowMapTexture;
+private:
+
+
+
 	int currentWidth = 0, currentHeight = 0;
 
 	// --- Shadow Map Resources (Pass 1 Targets) ---
 	GLuint shadowMapFBO;
-	GLuint shadowMapTexture;
+
 	const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
 
 	// --- Shaders ---

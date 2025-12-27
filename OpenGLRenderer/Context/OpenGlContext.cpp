@@ -5,7 +5,7 @@
 #include <cstdio>
 #include "Engine/Core/Coordinator/Coordinator.h"
 #include "Window/IWindow.h"
-#include <Logger.h>
+#include "Logger.h"
 
 static void on_window_size_callback(GLFWwindow* window, int width, int height)
 {
@@ -32,7 +32,8 @@ static void OnFileDropCallback(GLFWwindow* window, int count, const char** paths
     for (int i = 0; i < count; i++)
     {
         Event FileDropEvent(Events::Window::FILE_DROPPED);
-        FileDropEvent.SetParam<std::string>("FilePath", std::string(paths[i]));
+        std::string str(paths[i]);
+        FileDropEvent.SetParam<std::string>("FilePath", str);
         pWindow->EngineApi_->SendEvent(FileDropEvent);
     }
 }
@@ -78,7 +79,7 @@ bool OpenGlContext::init(IWindow* window)
 
     glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 
-    glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+    //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     /* Initialize the library */
     glfwSetWindowSizeCallback(glwindow, on_window_size_callback);
     glfwSetKeyCallback(glwindow, on_key_callback);
@@ -96,7 +97,7 @@ bool OpenGlContext::init(IWindow* window)
 void OpenGlContext::pre_render()
 {
     glViewport(0, 0, window->width, window->height);
-    glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+    //glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 

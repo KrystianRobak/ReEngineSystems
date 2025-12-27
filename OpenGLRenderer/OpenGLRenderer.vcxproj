@@ -172,6 +172,7 @@
     <ClInclude Include="Context\OpenGlContext.h" />
     <ClInclude Include="Context\OpenGlFrameBuffer.h" />
     <ClInclude Include="Context\UIContext.h" />
+    <ClInclude Include="Frustum.h" />
     <ClInclude Include="OpenGLViewport.h" />
     <ClInclude Include="RenderOpenGL.h" />
     <ClInclude Include="RenderOptimalization.h" />

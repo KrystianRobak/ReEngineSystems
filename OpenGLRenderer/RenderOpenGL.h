@@ -11,6 +11,7 @@
 #include "Window.h"
 #include "Shader.h"
 #include "OpenGLViewport.h"
+#include "Frustum.h"
 
 #include "ReCamera.h"
 
@@ -71,7 +72,19 @@ public:
 	REFVARIABLE()
 		GLuint shadowMapTexture;
 private:
+	// A buffer to hold the model matrices for the current batch
+	GLuint mInstanceVBO;
 
+	// Grouping structure
+	struct RenderBatch {
+		std::shared_ptr<MeshResource> resource;
+		int materialId;
+		int subMeshIndex;
+		std::vector<glm::mat4> instanceMatrices;
+	};
+
+	// Helper to configure the matrix attributes on a VAO
+	void SetupInstanceAttributes(GLuint vao);
 
 
 	int currentWidth = 0, currentHeight = 0;

@@ -10,6 +10,41 @@
 
 #include "ReScene.h"
 
+
+bool IsEntityVisible(const Frustum& frustum, const glm::mat4& modelMatrix, const glm::vec3& localMin, const glm::vec3& localMax)
+{
+    // Fast algorithm to transform an AABB into World Space
+    // Source: "Transforming Axis-Aligned Bounding Boxes" by Jim Arvo
+
+    glm::vec3 globalCenter = glm::vec3(modelMatrix[3]); // Translation part
+
+    glm::vec3 right = glm::vec3(modelMatrix[0]);
+    glm::vec3 up = glm::vec3(modelMatrix[1]);
+    glm::vec3 forward = glm::vec3(modelMatrix[2]);
+
+    glm::vec3 localCenter = (localMin + localMax) * 0.5f;
+    glm::vec3 localExtents = (localMax - localMin) * 0.5f;
+
+    // Transform center
+    glm::vec3 newCenter = globalCenter +
+        (right * localCenter.x) +
+        (up * localCenter.y) +
+        (forward * localCenter.z);
+
+    // Transform extents (take absolute value of rotation to fit the box)
+    glm::vec3 newExtents = glm::vec3(
+        std::abs(right.x) * localExtents.x + std::abs(up.x) * localExtents.y + std::abs(forward.x) * localExtents.z,
+        std::abs(right.y) * localExtents.x + std::abs(up.y) * localExtents.y + std::abs(forward.y) * localExtents.z,
+        std::abs(right.z) * localExtents.x + std::abs(up.z) * localExtents.y + std::abs(forward.z) * localExtents.z
+    );
+
+    glm::vec3 worldMin = newCenter - newExtents;
+    glm::vec3 worldMax = newCenter + newExtents;
+
+    return frustum.IsBoxVisible(worldMin, worldMax);
+}
+
+
 static inline void glfw_error_callback(int error, const char* description)
 {
     LOGF_ERROR("GLFW Error %d : %s", error, description)
@@ -34,6 +69,12 @@ void RenderOpenGL::InitRenderContext(IWindow* window)
 
     InitShadowMap();
     InitGBuffer(1920, 1080); // Initial size, should match viewport
+
+    glGenBuffers(1, &mInstanceVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
+    // Reserve space for ~10,000 instances (640KB), dynamic usage
+    glBufferData(GL_ARRAY_BUFFER, 10000 * sizeof(glm::mat4), nullptr, GL_STREAM_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 IWindow* RenderOpenGL::GetWindow()
@@ -52,10 +93,65 @@ void RenderOpenGL::Update(float dt)
 
 void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuffer* framebuffer)
 {
-    std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
+
 
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
     glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
+
+    Frustum cameraFrustum;
+    cameraFrustum.Update(projection * view);
+
+    std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
+
+    std::vector<RenderBatch> batches;
+
+    // --- CULLING & BATCHING ---
+    for (const auto& cmd : RenderCommands) {
+        auto& res = cmd.Primitive.Mesh;
+        if (!res || !res->uploaded || !res->cpuMesh) continue;
+
+        // 1. BROAD PHASE: Check the whole object first
+        // If the entire building is behind us, don't waste time checking windows and doors.
+        if (!IsEntityVisible(cameraFrustum, cmd.Primitive.ModelMatrix, res->cpuMesh->aabbMin, res->cpuMesh->aabbMax)) {
+            continue;
+        }
+
+        // 2. NARROW PHASE: Check each sub-mesh
+        for (size_t i = 0; i < res->cpuMesh->meshes.size(); ++i) {
+            const auto& subMesh = res->cpuMesh->meshes[i];
+
+            // Check if this specific part is visible
+            // Note: If subMesh has a LocalTransform, you must combine it: ModelMatrix * LocalTransform
+            glm::mat4 effectiveModelMatrix = cmd.Primitive.ModelMatrix; // * subMesh.LocalTransform;
+
+            if (IsEntityVisible(cameraFrustum, effectiveModelMatrix, subMesh.aabbMin, subMesh.aabbMax)) {
+
+                // FIND OR CREATE BATCH
+                bool batchFound = false;
+                for (auto& batch : batches) {
+                    if (batch.resource == res &&
+                        batch.subMeshIndex == i && // Match specific sub-mesh
+                        batch.materialId == cmd.Primitive.MaterialId)
+                    {
+                        batch.instanceMatrices.push_back(effectiveModelMatrix);
+                        batchFound = true;
+                        break;
+                    }
+                }
+
+                if (!batchFound) {
+                    RenderBatch newBatch;
+                    newBatch.resource = res;
+                    newBatch.subMeshIndex = i;
+                    newBatch.materialId = cmd.Primitive.MaterialId;
+                    newBatch.instanceMatrices.push_back(effectiveModelMatrix);
+                    batches.push_back(newBatch);
+                }
+            }
+        }
+    }
+
+
 
     // === Define Light Variables (Todo: Get from Commander/ECS) ===
     glm::vec3 lightPos(-20.0f, 50.0f, -10.0f); // Directional Light Source
@@ -74,15 +170,20 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     shadowMapShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
 
     // Render Scene (Depth Only)
-    for (const auto& cmd : RenderCommands) {
-        auto& res = cmd.Primitive.Mesh;
-        if (res && res->uploaded) {
-            shadowMapShader->SetMat4("model", cmd.Primitive.ModelMatrix);
-            for (size_t i = 0; i < res->VAOs.size(); ++i) {
-                glBindVertexArray(res->VAOs[i]);
-                glDrawElements(GL_TRIANGLES, res->indexCounts[i], GL_UNSIGNED_INT, 0);
-            }
-        }
+    for (auto& batch : batches) {
+        if (batch.instanceMatrices.empty()) continue;
+
+        glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
+        // Upload the matrices for THIS batch only
+        glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4), batch.instanceMatrices.data(), GL_STREAM_DRAW);
+
+        GLuint vao = batch.resource->VAOs[batch.subMeshIndex];
+        uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
+
+        glBindVertexArray(vao);
+        SetupInstanceAttributes(vao); // Point attributes to mInstanceVBO
+
+        glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -97,8 +198,17 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     geometryPassShader->SetMat4("view", view);
     geometryPassShader->SetMat4("projection", projection);
 
-    for (const auto& cmd : RenderCommands) {
-        CompiledMaterial* mat = assetManager_->GetMaterial(cmd.Primitive.MaterialId);
+    for (auto& batch : batches) {
+        if (batch.instanceMatrices.empty()) continue;
+
+        // A. Upload Matrices to GPU
+        // Bind the huge instance buffer
+        glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
+        // Upload the matrices for THIS batch only
+        glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4), batch.instanceMatrices.data(), GL_STREAM_DRAW);
+
+
+        CompiledMaterial* mat = assetManager_->GetMaterial(batch.materialId);
 
         Shader* currentShader = nullptr;
 
@@ -123,7 +233,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         // 2. SET COMMON UNIFORMS
         currentShader->SetMat4("view", view);
         currentShader->SetMat4("projection", projection);
-        currentShader->SetMat4("model", cmd.Primitive.ModelMatrix);
 
         // 3. SET MATERIAL UNIFORMS (Graph Parameters)
         if (mat && mat->GLShader) {
@@ -145,13 +254,13 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         }
 
         // 4. DRAW
-        auto& res = cmd.Primitive.Mesh;
-        if (res && res->uploaded) {
-            for (size_t i = 0; i < res->VAOs.size(); ++i) {
-                glBindVertexArray(res->VAOs[i]);
-                glDrawElements(GL_TRIANGLES, res->indexCounts[i], GL_UNSIGNED_INT, 0);
-            }
-        }
+        GLuint vao = batch.resource->VAOs[batch.subMeshIndex];
+        uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
+
+        glBindVertexArray(vao);
+        SetupInstanceAttributes(vao); // Point attributes to mInstanceVBO
+
+        glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
 
@@ -192,63 +301,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     RenderQuad();             // This now draws into your UI texture
     glEnable(GL_DEPTH_TEST);
 
-    //for (const RenderCommand& command : RenderCommands)
-    //{
-    //    const RenderPrimitive& prim = command.Primitive;
-
-    //    if (command.Primitive.MaterialId == 1200)
-    //    {
-    //        // ... existing default shader logic ...
-    //        shader->Use();
-    //        shader->SetMat4("View", view);
-    //        shader->SetMat4("Projection", projection);
-    //        shader->SetMat4("Model", prim.ModelMatrix);
-    //    }
-    //    else
-    //    {
-    //        CompiledMaterial* material = assetManager_->GetMaterial(command.Primitive.MaterialId);
-    //        if (!material || !material->GLShader) continue;
-
-    //        material->GLShader->Use();
-    //        material->GLShader->SetMat4("View", view);
-    //        material->GLShader->SetMat4("Projection", projection);
-    //        material->GLShader->SetMat4("Model", prim.ModelMatrix);
-
-    //        // 1. Set Uniform Parameters (Floats/Vecs)
-    //        for (auto& [name, value] : material->m_Parameters)
-    //        {
-    //            material->GLShader->SetVec4(name, value);
-    //        }
-
-    //        // 2. --- NEW TEXTURE BINDING LOGIC ---
-    //        int textureSlot = 0;
-    //        for (auto& [samplerName, textureResource] : material->textures)
-    //        {
-    //            if (textureResource && textureResource->uploaded)
-    //            {
-    //                // Activate proper texture unit (0, 1, 2...)
-    //                glActiveTexture(GL_TEXTURE0 + textureSlot);
-
-    //                // Bind the GPU Texture ID
-    //                glBindTexture(GL_TEXTURE_2D, textureResource->id);
-
-    //                // Tell the shader that 'samplerName' (e.g., "Tex_S1_Tex") 
-    //                // should look at texture unit 'textureSlot'
-    //                material->GLShader->SetInt(samplerName, textureSlot);
-
-    //                textureSlot++;
-    //            }
-    //        }
-    //        // -------------------------------------
-    //    }
-
-    //    auto& res = command.Primitive.Mesh;
-    //    if (!res || !res->uploaded) continue;
-
-    //    glBindVertexArray(res->VAO);
-    //    glDrawElements(GL_TRIANGLES, res->indexCount, GL_UNSIGNED_INT, 0);
-    //}
-
     glBindVertexArray(0);
     glUseProgram(0);
 }
@@ -271,6 +323,24 @@ void RenderOpenGL::RecompileShader()
 
 void RenderOpenGL::WindowSizeListener()
 {
+}
+
+void RenderOpenGL::SetupInstanceAttributes(GLuint vao)
+{
+    // Bind the buffer containing the matrices (It must be bound to GL_ARRAY_BUFFER)
+    glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
+
+    // Matrix is 4 vec4s. We need attributes 5, 6, 7, 8.
+    // Assuming sizeof(glm::mat4) == 64 bytes
+    GLsizei vec4Size = sizeof(glm::vec4);
+
+    for (int i = 0; i < 4; i++) {
+        glEnableVertexAttribArray(5 + i);
+        glVertexAttribPointer(5 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(i * vec4Size));
+
+        // THIS IS THE KEY: 1 = Update per instance
+        glVertexAttribDivisor(5 + i, 1);
+    }
 }
 
 void RenderOpenGL::RenderQuad()

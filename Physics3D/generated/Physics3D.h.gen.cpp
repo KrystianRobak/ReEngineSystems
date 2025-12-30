@@ -59,7 +59,18 @@ struct Physics3D_AutoRegister {
                 false,
                 offsetof(Physics3D, ComponentsToRegister),
                 vType,
-                "Transform, RigidBody, BoxCollider"
+                "Transform, RigidBody"
+            };
+            Physics3D_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("glm::vec<3, float>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "gravity", "public",
+                false,
+                offsetof(Physics3D, gravity),
+                vType,
+                "glm, ::, vec3, (, 0.0f, -, 0.81f, 0.0f, )"
             };
             Physics3D_Variables.push_back(std::move(rv));
         }

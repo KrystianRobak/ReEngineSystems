@@ -6,6 +6,18 @@
 #include "Engine/Core/Coordinator/Coordinator.h"
 #include "Window/IWindow.h"
 #include "Logger.h"
+#include "InputEvent.h"
+
+static KeyState TranslateKeyState(int action)
+{
+    switch (action)
+    {
+    case GLFW_PRESS:   return KeyState::Pressed;
+    case GLFW_RELEASE: return KeyState::Released;
+    case GLFW_REPEAT:  return KeyState::Held;
+    default:           return KeyState::Released;
+    }
+}
 
 static void on_window_size_callback(GLFWwindow* window, int width, int height)
 {
@@ -13,17 +25,32 @@ static void on_window_size_callback(GLFWwindow* window, int width, int height)
     pWindow->on_resize(width, height);
 }
 
-static void on_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+void KeyCallback(GLFWwindow* window, int key, int, int action, int)
 {
-    //std::shared_ptr<Coordinator> coordinator = Coordinator::GetCoordinator();
+    InputEvent e{};
+    e.type = InputEvent::Type::Key;
+    e.key = key;
+    e.state = TranslateKeyState(action);
 
-    //if ((key >= 65 && key <= 90) && (action == GLFW_REPEAT || action == GLFW_PRESS || action == GLFW_RELEASE))
-    //{
-    //    Event KeyEvent(Events::Window::INPUT);
-    //    KeyEvent.SetParam<int>("InputKey", key);
-    //    KeyEvent.SetParam<int>("InputAction", action);
-    //    coordinator->SendEvent(KeyEvent);
-    //}
+    auto pWindow = static_cast<IWindow*>(glfwGetWindowUserPointer(window));
+
+    Event InputEventHappend(Events::Window::Input::INPUT);
+    InputEventHappend.SetParam<InputEvent>("Input", e);
+    pWindow->EngineApi_->SendEvent(InputEventHappend);
+}
+
+void MouseButtonCallback(GLFWwindow* window, int button, int action, int)
+{
+    InputEvent e{};
+    e.type = InputEvent::Type::MouseButton;
+    e.mouseBtn = static_cast<MouseButton>(button);
+    e.state = TranslateKeyState(action);
+
+    auto pWindow = static_cast<IWindow*>(glfwGetWindowUserPointer(window));
+
+    Event InputEventHappend(Events::Window::Input::INPUT);
+    InputEventHappend.SetParam<InputEvent>("Input", e);
+    pWindow->EngineApi_->SendEvent(InputEventHappend);
 }
 
 static void OnFileDropCallback(GLFWwindow* window, int count, const char** paths)
@@ -82,7 +109,8 @@ bool OpenGlContext::init(IWindow* window)
     //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     /* Initialize the library */
     glfwSetWindowSizeCallback(glwindow, on_window_size_callback);
-    glfwSetKeyCallback(glwindow, on_key_callback);
+    glfwSetKeyCallback(glwindow, KeyCallback);
+    glfwSetMouseButtonCallback(glwindow, MouseButtonCallback);
     glfwSetDropCallback(glwindow, OnFileDropCallback);
     /*glfwSetScrollCallback(glWindow, on_scroll_callback);
     * 

@@ -11,7 +11,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Physics3D", "Physics3D\Phys
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ReEngineAiAssistant", "ReEngineAiAssistant\ReEngineAiAssistant.vcxproj", "{43DA1ED4-04CC-46B1-8254-B185DCFAA767}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ReEngineModule1", "ReEngineModule1\ReEngineModule1.vcxproj", "{84FDEDC2-3DD7-4186-97D5-138CD7F5E5A6}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WorldGeneration", "ReEngineModule1\ReEngineModule1.vcxproj", "{84FDEDC2-3DD7-4186-97D5-138CD7F5E5A6}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Animator", "Animator\Animator.vcxproj", "{F3F81197-7E4D-4C7F-824A-42C6D3A4EC91}"
 EndProject

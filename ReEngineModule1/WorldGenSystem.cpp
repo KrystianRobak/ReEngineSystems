@@ -105,7 +105,7 @@ void WorldGenSystem::GenerateTerrain(int width, int depth, float scale, float he
     // Assuming you have a StaticMeshComponent that takes an ID
     engine_->AddComponent(terrain, "StaticMesh");
     StaticMesh* meshComp = static_cast<StaticMesh*>(engine_->GetComponent(terrain, "StaticMesh"));
-    meshComp->MeshResourceId = assetManager_->GetCurrentMeshId();
+    meshComp->MeshResource;
     // meshComp->materialId = ... (Assign a default material here)
 
     // Add Physics (Floor)

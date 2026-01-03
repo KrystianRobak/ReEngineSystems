@@ -32,7 +32,7 @@ struct RenderOpenGL_AutoRegister {
                 false,
                 offsetof(RenderOpenGL, ComponentsToRegister),
                 vType,
-                "Transform, StaticMesh"
+                "Transform"
             };
             RenderOpenGL_Variables.push_back(std::move(rv));
         }

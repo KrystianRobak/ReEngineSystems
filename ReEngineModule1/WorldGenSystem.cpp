@@ -29,36 +29,56 @@ glm::vec3 WorldGenSystem::CalculateNormal(float x, float z, float scale, float h
 }
 
 void WorldGenSystem::GenerateTerrain(int width, int depth, float scale, float heightMultiplier) {
-
     auto staticMeshData = std::make_shared<StaticMeshData>();
-    MeshData meshData;
+    Entity terrain = engine_->CreateEntity();
 
-    // 1. Generate Vertices
-    float halfW = width * 0.5f;
-    float halfD = depth * 0.5f;
+    // Always use GetComponentForWrite for initial setup to ensure data is 
+    // propagated from Write Buffer to Read Buffer during the next SwapData()
+    engine_->AddComponent(terrain, "Transform");
+    Transform* t = static_cast<Transform*>(engine_->GetComponentForWrite(terrain, "Transform"));
+    t->position = glm::vec3(0, -5, 0);
+    t->scale = glm::vec3(1, 1, 1);
+    engine_->MarkEntityDirty(terrain, "Transform");
+
+    // 2. Setup the HeightfieldCollider (The source of truth for heights)
+    engine_->AddComponent(terrain, "HeightfieldCollider");
+    HeightfieldCollider* hf = static_cast<HeightfieldCollider*>(engine_->GetComponentForWrite(terrain, "HeightfieldCollider"));
+    hf->width = width;
+    hf->depth = depth;
+    hf->scale = scale;
+    hf->heightMultiplier = heightMultiplier;
+    hf->halfWidth = (float)width * 0.5f;
+    hf->halfDepth = (float)depth * 0.5f;
+
+    // Initialize its AABB for the Octree
+    hf->Update(t->position);
+
+    MeshData meshData;
 
     for (int z = 0; z < depth; z++) {
         for (int x = 0; x < width; x++) {
             Vertex v;
+            float posX = x - hf->halfWidth;
+            float posZ = z - hf->halfDepth;
 
-            // Center the terrain around 0,0
-            float posX = x - halfW;
-            float posZ = z - halfD;
-            float posY = GetHeight(posX, posZ, scale, heightMultiplier);
+            // Sample height from the collider logic to ensure physical alignment
+            float posY = hf->GetHeightAt(posX, posZ);
 
             v.Position = glm::vec3(posX, posY, posZ);
-            v.Normal = CalculateNormal(posX, posZ, scale, heightMultiplier);
-            v.TexCoords = glm::vec2((float)x / width, (float)z / depth); // UVs 0-1
 
-            // Tangents (simplified)
-            v.Tangent = glm::vec3(1, 0, 0);
-            v.Bitangent = glm::vec3(0, 0, 1);
+            // Finite difference for Normals
+            float hL = hf->GetHeightAt(posX - 0.1f, posZ);
+            float hR = hf->GetHeightAt(posX + 0.1f, posZ);
+            float hD = hf->GetHeightAt(posX, posZ - 0.1f);
+            float hU = hf->GetHeightAt(posX, posZ + 0.1f);
+            v.Normal = glm::normalize(glm::vec3(hL - hR, 0.2f, hD - hU));
 
+            v.TexCoords = glm::vec2((float)x / width, (float)z / depth);
             meshData.vertices.push_back(v);
         }
     }
 
-    // 2. Generate Indices (Triangles)
+    // 4. Generate Indices
     for (int z = 0; z < depth - 1; z++) {
         for (int x = 0; x < width - 1; x++) {
             int topLeft = (z * width) + x;
@@ -66,69 +86,35 @@ void WorldGenSystem::GenerateTerrain(int width, int depth, float scale, float he
             int bottomLeft = ((z + 1) * width) + x;
             int bottomRight = bottomLeft + 1;
 
-            // Triangle 1
             meshData.indices.push_back(topLeft);
             meshData.indices.push_back(bottomLeft);
             meshData.indices.push_back(topRight);
 
-            // Triangle 2
             meshData.indices.push_back(topRight);
             meshData.indices.push_back(bottomLeft);
             meshData.indices.push_back(bottomRight);
         }
     }
 
-    // 3. Store Data and Register
     staticMeshData->meshes.push_back(meshData);
+    staticMeshData->path = "Generated_Terrain";
 
-    // Calculate AABB for the mesh
-    glm::vec3 min(FLT_MAX);
-    glm::vec3 max(-FLT_MAX);
-    for (auto& v : meshData.vertices) {
-        min = glm::min(min, v.Position);
-        max = glm::max(max, v.Position);
-    }
-    staticMeshData->aabbMin = min;
-    staticMeshData->aabbMax = max;
-    staticMeshData->path = "Generated_Terrain"; // Virtual path
-
-    // 4. Create Entity in Scene
-    Entity terrain = engine_->CreateEntity();
-	engine_->AddComponent(terrain, "Transform");
-
-    // Add Transform
-    Transform* t = static_cast<Transform*>(engine_->GetComponent(terrain, "Transform"));
-    t->position = glm::vec3(0, -5, 0); // Move down slightly
-    t->scale = glm::vec3(1, 1, 1);
-
-    // Add Mesh Component
-    // Assuming you have a StaticMeshComponent that takes an ID
+    // 5. Finalize Components
     engine_->AddComponent(terrain, "StaticMesh");
-    StaticMesh* meshComp = static_cast<StaticMesh*>(engine_->GetComponent(terrain, "StaticMesh"));
-    meshComp->MeshResource;
-    // meshComp->materialId = ... (Assign a default material here)
+    std::shared_ptr<MeshResource> gpuHandle = assetManager_->CreateManualMesh("Terrain_Gen_1", staticMeshData);
 
-    // Add Physics (Floor)
+    // Assign to your component
+    StaticMesh* meshComp = static_cast<StaticMesh*>(engine_->GetComponentForWrite(terrain, "StaticMesh"));
+    meshComp->MeshResource = gpuHandle; // The component now holds the handle that will eventually be 'uploaded'
+
     engine_->AddComponent(terrain, "RigidBody");
-    RigidBody* rb = static_cast<RigidBody*>(engine_->GetComponent(terrain, "RigidBody"));
-    rb->isStatic = true; // IMPORTANT: The floor must be static
-
-    // 5. Add Optimized Heightfield Collider (REPLACEMENT FOR BOXCOLLIDER)
-    engine_->AddComponent(terrain, "HeightfieldCollider");
-    HeightfieldCollider* hf = static_cast<HeightfieldCollider*>(engine_->GetComponent(terrain, "HeightfieldCollider"));
-    hf->width = width;
-    hf->depth = depth;
-    hf->scale = scale;
-    hf->heightMultiplier = heightMultiplier;
-
-    // Store half-extents to quickly check if object is within terrain XZ bounds
-    hf->halfWidth = (float)width * 0.5f;
-    hf->halfDepth = (float)depth * 0.5f;
+    RigidBody* rb = static_cast<RigidBody*>(engine_->GetComponentForWrite(terrain, "RigidBody"));
+    rb->isStatic = true;
+    rb->mass = 0.0f; // Static objects typically have 0 mass (infinite)
 }
 
 extern "C" {
-    REFLECTION_API System* CreateSystem()
-    {
+    REFLECTION_API System* CreateSystem() {
         return new WorldGenSystem();
     }
 }

@@ -1,86 +1,92 @@
 #include "Animator.h"
-#include <SkeletalMeshComponent.h>
+#include "SkeletalMeshComponent.h"
+#include "SkeletalMeshData.h"
+#include "Engine/Animation/Animation.h"
+#include "Engine/Animation/AssimpNodeData.h"
+#include "Api/AssetManagerApi.h" 
 #include <iostream>
-#include <string>
-
-#include "../../ReEngine/ReEngine/Public/Engine/Animation/Animation.h"
-#include "../../ReEngine/ReEngine/Public/Engine/Animation/AssimpNodeData.h"
 
 void Animator::Update(float dt)
 {
-	for (auto const& entity : mEntities)
-	{
-		auto component = static_cast<SkeletalMeshComponent*>(engine_->GetComponent(entity, "SkeletalMeshComponent"));
-		if (!component || !component->MeshResource) continue;
+    for (auto const& entity : mEntities)
+    {
+        auto component = static_cast<SkeletalMeshComponent*>(engine_->GetComponent(entity, "SkeletalMeshComponent"));
 
-		if (component->MeshResource->animations.empty()) continue;
+        // Validation Checks
+        if (!component || !component->MeshResource) continue;
+        if (!component->MeshResource->cpuMesh) continue;
 
-		Animation* currentAnimation = nullptr;
-		
-        // Use the selected animation if available, otherwise default to the first one
-		if (!component->CurrentAnimationName.empty())
-		{
-            auto it = component->MeshResource->animations.find(component->CurrentAnimationName);
-            if(it != component->MeshResource->animations.end())
-			    currentAnimation = &it->second;
-		}
-        
-        if (!currentAnimation && !component->MeshResource->animations.empty())
-		{
-			auto it = component->MeshResource->animations.begin();
-			currentAnimation = &it->second;
-            // Update the component to reflect the playing animation
-            component->CurrentAnimationName = currentAnimation->GetName();
-		}
+        // Cast to Skeletal Data
+        auto skeletalMesh = std::static_pointer_cast<SkeletalMeshData>(component->MeshResource->cpuMesh);
+        if (!skeletalMesh) continue;
+        if (skeletalMesh->animations.empty()) continue;
 
-		if (currentAnimation)
-		{
-			component->CurrentTime += currentAnimation->GetTicksPerSecond() * dt * component->AnimationSpeed;
-			component->CurrentTime = fmod(component->CurrentTime, currentAnimation->GetDuration());
+        // --- CHANGE: Pure Evaluation Mode ---
+        // We do NOT decide which animation to play. We blindly trust CurrentAnimationName.
+        // The AnimationGraphSystem (or user code) is responsible for setting this.
 
-			CalculateBoneTransform(&currentAnimation->GetRootNode(), glm::mat4(1.0f), component, currentAnimation);
-		}
-	}
+        Animation* currentAnimation = nullptr;
+        if (!component->CurrentAnimationName.empty())
+        {
+            auto it = skeletalMesh->animations.find(component->CurrentAnimationName);
+            if (it != skeletalMesh->animations.end())
+                currentAnimation = &it->second;
+        }
+
+        // Only calculate if we actually found the animation data
+        if (currentAnimation)
+        {
+            // 1. Advance Time
+            component->CurrentTime += currentAnimation->GetTicksPerSecond() * dt * component->AnimationSpeed;
+
+            // Handle Looping (Graph might override this later, but safe default)
+            float duration = currentAnimation->GetDuration();
+            if (duration > 0.0f) {
+                component->CurrentTime = fmod(component->CurrentTime, duration);
+            }
+
+            // 2. Calculate Matrices
+            CalculateBoneTransform(&currentAnimation->GetRootNode(), glm::mat4(1.0f), component, currentAnimation, skeletalMesh);
+        }
+    }
 }
 
-void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform, SkeletalMeshComponent* component, Animation* animation)
+// This function remains exactly the same as you had it
+void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform, SkeletalMeshComponent* component, Animation* animation, std::shared_ptr<SkeletalMeshData> skeletalMesh)
 {
-	std::string nodeName = node->name;
-	glm::mat4 nodeTransform = node->transformation;
+    std::string nodeName = node->name;
+    glm::mat4 nodeTransform = node->transformation;
 
-	Bone* Bone = animation->FindBone(nodeName);
+    Bone* Bone = animation->FindBone(nodeName);
 
-	if (Bone)
-	{
-		Bone->Update(component->CurrentTime);
-		nodeTransform = Bone->GetLocalTransform();
-	}
+    if (Bone)
+    {
+        Bone->Update(component->CurrentTime);
+        nodeTransform = Bone->GetLocalTransform();
+    }
 
-	glm::mat4 globalTransformation = parentTransform * nodeTransform;
+    glm::mat4 globalTransformation = parentTransform * nodeTransform;
 
-	auto& boneInfoMap = component->MeshResource->boneInfoMap;
-	if (boneInfoMap.find(nodeName) != boneInfoMap.end())
-	{
-		int index = boneInfoMap[nodeName].id;
-		glm::mat4 offset = boneInfoMap[nodeName].offset;
-        
-        // Ensure the vector is large enough
-        if(component->FinalBoneMatrices.size() <= index) {
+    auto& boneInfoMap = skeletalMesh->boneInfoMap;
+    if (boneInfoMap.find(nodeName) != boneInfoMap.end())
+    {
+        int index = boneInfoMap[nodeName].id;
+        glm::mat4 offset = boneInfoMap[nodeName].offset;
+
+        if (component->FinalBoneMatrices.size() <= index) {
             component->FinalBoneMatrices.resize(index + 1, glm::mat4(1.0f));
         }
 
-		component->FinalBoneMatrices[index] = globalTransformation * offset;
-	}
+        component->FinalBoneMatrices[index] = globalTransformation * offset;
+    }
 
-	for (int i = 0; i < node->childrenCount; i++)
-		CalculateBoneTransform(&node->children[i], globalTransformation, component, animation);
+    for (int i = 0; i < node->childrenCount; i++)
+        CalculateBoneTransform(&node->children[i], globalTransformation, component, animation, skeletalMesh);
 }
 
-void Animator::Cleanup()
-{
-}
+void Animator::Cleanup() {}
 
 extern "C" REFLECTION_API System* CreateSystem()
 {
-	return new Animator();
+    return new Animator();
 }

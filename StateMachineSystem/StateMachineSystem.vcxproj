@@ -21,10 +21,10 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{ca85af68-ba37-4467-beb1-742153003dd1}</ProjectGuid>
-    <RootNamespace>Physics3D</RootNamespace>
+    <ProjectGuid>{54ab533f-a111-4e86-980f-a5970c563f9b}</ProjectGuid>
+    <RootNamespace>StateMachineSystem</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>Physics3D</ProjectName>
+    <ProjectName>StateMachineSystem</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -143,12 +143,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="$(ProjectDir)generated\AllGenerated.cpp" />
-    <ClCompile Include="Octree.cpp" />
-    <ClCompile Include="Physics3D.cpp" />
+    <ClCompile Include="StateMachineSystem.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Octree.h" />
-    <ClInclude Include="Physics3D.h" />
+    <ClInclude Include="StateMachineSystem.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

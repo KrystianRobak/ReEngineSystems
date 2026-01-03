@@ -21,7 +21,7 @@ class REFLECTION_API RenderOpenGL : public RenderSystem
 public:
 
 	REFVARIABLE()
-	std::vector<std::string> ComponentsToRegister = { "Transform", "StaticMesh"};
+	std::vector<std::string> ComponentsToRegister = { "Transform"};
 
 	virtual void InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger = nullptr) override;
 

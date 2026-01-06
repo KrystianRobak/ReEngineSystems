@@ -36,6 +36,28 @@ struct RenderOpenGL_AutoRegister {
             };
             RenderOpenGL_Variables.push_back(std::move(rv));
         }
+         vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "SystemsToRunAfter", "public",
+                false,
+                offsetof(RenderOpenGL, SystemsToRunAfter),
+                vType,
+                "Animator, Physics3D, AiAssistant, WorldGenSystem"
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("bool");
+        {
+            Reflection::ReflectedVariable rv = {
+                "RunOnMainThread", "public",
+                false,
+                offsetof(RenderOpenGL, RunOnMainThread),
+                vType,
+                "false"
+            };
+            RenderOpenGL_Variables.push_back(std::move(rv));
+        }
          vType = Reflection::Registry::Instance().GetOrCreateType("unsigned int");
         {
             Reflection::ReflectedVariable rv = {

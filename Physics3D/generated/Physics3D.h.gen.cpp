@@ -36,6 +36,28 @@ struct Physics3D_AutoRegister {
             };
             Physics3D_Variables.push_back(std::move(rv));
         }
+         vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "SystemsToRunAfter", "public",
+                false,
+                offsetof(Physics3D, SystemsToRunAfter),
+                vType,
+                "StateMachineSystem"
+            };
+            Physics3D_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "WriteComponents", "public",
+                false,
+                offsetof(Physics3D, WriteComponents),
+                vType,
+                "Transform, RigidBody"
+            };
+            Physics3D_Variables.push_back(std::move(rv));
+        }
         ci.variables = Physics3D_Variables;
         Reflection::Registry::Instance().RegisterSystem(std::move(ci));
     }

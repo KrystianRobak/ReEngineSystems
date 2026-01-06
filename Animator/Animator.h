@@ -19,8 +19,17 @@ public:
     REFVARIABLE()
         std::vector<std::string> ComponentsToRegister = { "SkeletalMeshComponent" };
 
+    // --- DEPENDENCIES ---
+    // Animator must run AFTER logic (state changes) and AFTER physics (if using root motion/ragdolls)
+    REFVARIABLE()
+        std::vector<std::string> SystemsToRunAfter = { "StateMachineSystem", "Physics3D" };
+
+    // It writes to the mesh component, preparing matrices for the renderer
+    REFVARIABLE()
+        std::vector<std::string> WriteComponents = { "SkeletalMeshComponent" };
+
     void Update(float dt) override;
-    void Cleanup() override;
+    void Cleanup();
 
 private:
     void CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform, SkeletalMeshComponent* component, Animation* animation, std::shared_ptr<SkeletalMeshData> skeletalMesh);

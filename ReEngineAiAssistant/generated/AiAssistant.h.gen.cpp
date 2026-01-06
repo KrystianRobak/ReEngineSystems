@@ -60,6 +60,16 @@ struct AiAssistant_AutoRegister {
             };
             AiAssistant_Variables.push_back(std::move(rv));
         }
+         vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "SystemsToRunAfter", "public",
+                false,
+                offsetof(AiAssistant, SystemsToRunAfter),
+                vType
+            };
+            AiAssistant_Variables.push_back(std::move(rv));
+        }
         ci.variables = AiAssistant_Variables;
         Reflection::Registry::Instance().RegisterSystem(std::move(ci));
     }

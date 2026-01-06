@@ -1,87 +1,168 @@
 #include "Animator.h"
 #include "SkeletalMeshComponent.h"
 #include "SkeletalMeshData.h"
-#include "Engine/Animation/Animation.h"
-#include "Engine/Animation/AssimpNodeData.h"
+#include "Animation/Animation.h"
+#include "Animation/AssimpNodeData.h"
 #include "Api/AssetManagerApi.h" 
 #include <iostream>
 
+// --- DIAGNOSTIC HELPER ---
+void PrintMat4(const std::string& name, const glm::mat4& mat) {
+    std::cout << name << ":\n";
+    for (int i = 0; i < 4; i++) {
+        std::cout << "  [";
+        for (int j = 0; j < 4; j++) {
+            std::cout << mat[j][i] << (j < 3 ? ", " : "");
+        }
+        std::cout << "]\n";
+    }
+}
+
 void Animator::Update(float dt)
 {
+    static bool debugPrinted = false; // Only print once for debugging
+
     for (auto const& entity : mEntities)
     {
         auto component = static_cast<SkeletalMeshComponent*>(engine_->GetComponent(entity, "SkeletalMeshComponent"));
 
-        // Validation Checks
         if (!component || !component->MeshResource) continue;
         if (!component->MeshResource->cpuMesh) continue;
 
-        // Cast to Skeletal Data
         auto skeletalMesh = std::static_pointer_cast<SkeletalMeshData>(component->MeshResource->cpuMesh);
         if (!skeletalMesh) continue;
-        if (skeletalMesh->animations.empty()) continue;
 
-        // --- CHANGE: Pure Evaluation Mode ---
-        // We do NOT decide which animation to play. We blindly trust CurrentAnimationName.
-        // The AnimationGraphSystem (or user code) is responsible for setting this.
+        std::shared_ptr<Animation> currentAnimation = nullptr;
 
-        Animation* currentAnimation = nullptr;
         if (!component->CurrentAnimationName.empty())
         {
-            auto it = skeletalMesh->animations.find(component->CurrentAnimationName);
-            if (it != skeletalMesh->animations.end())
-                currentAnimation = &it->second;
+            currentAnimation = engine_->GetAssetManager()->GetAnimation(component->CurrentAnimationName);
         }
 
-        // Only calculate if we actually found the animation data
         if (currentAnimation)
         {
-            // 1. Advance Time
+            int boneCount = skeletalMesh->boneCount;
+
+            // **CRITICAL FIX: Resize to actual bone count, not just check**
+            component->FinalBoneMatrices.clear();
+            component->FinalBoneMatrices.resize(boneCount, glm::mat4(1.0f));
+
+            // Advance Time
             component->CurrentTime += currentAnimation->GetTicksPerSecond() * dt * component->AnimationSpeed;
 
-            // Handle Looping (Graph might override this later, but safe default)
             float duration = currentAnimation->GetDuration();
             if (duration > 0.0f) {
-                component->CurrentTime = fmod(component->CurrentTime, duration);
+                if (component->IsLooping)
+                    component->CurrentTime = fmod(component->CurrentTime, duration);
+                else if (component->CurrentTime > duration)
+                    component->CurrentTime = duration;
             }
 
-            // 2. Calculate Matrices
-            CalculateBoneTransform(&currentAnimation->GetRootNode(), glm::mat4(1.0f), component, currentAnimation, skeletalMesh);
+            // **CRITICAL: Get the root node properly**
+            const AssimpNodeData& rootNode = currentAnimation->GetRootNode();
+
+            // --- DIAGNOSTIC OUTPUT (First Frame Only) ---
+            if (!debugPrinted) {
+                std::cout << "\n=== ANIMATION DEBUG INFO ===\n";
+                std::cout << "Animation: " << component->CurrentAnimationName << "\n";
+                std::cout << "Duration: " << duration << " ticks\n";
+                std::cout << "TPS: " << currentAnimation->GetTicksPerSecond() << "\n";
+                std::cout << "Current Time: " << component->CurrentTime << "\n";
+                std::cout << "Bone Count: " << boneCount << "\n";
+                std::cout << "Root Node: " << rootNode.name << "\n";
+                std::cout << "Root Transform:\n";
+                PrintMat4("  Root", rootNode.transformation);
+
+                // Print all bones in the animation
+                std::cout << "\nBones in boneInfoMap:\n";
+                for (const auto& [name, info] : skeletalMesh->boneInfoMap) {
+                    std::cout << "  - " << name << " (ID: " << info.id << ")\n";
+                }
+
+                debugPrinted = true;
+            }
+
+            // **KEY FIX: Pass IDENTITY as root, not the root transformation**
+            // The root transformation should be applied by the hierarchy traversal
+            CalculateBoneTransform(&rootNode, glm::mat4(1.0f), component, currentAnimation.get(), skeletalMesh);
+
+            // --- VERIFY OUTPUT ---
+            if (!debugPrinted) {
+                std::cout << "\nFinal Bone Matrices (first 3):\n";
+                for (int i = 0; i < std::min(3, (int)component->FinalBoneMatrices.size()); i++) {
+                    std::cout << "Bone " << i << ":\n";
+                    PrintMat4("  Matrix", component->FinalBoneMatrices[i]);
+                }
+                std::cout << "===========================\n\n";
+            }
+        }
+        else
+        {
+            // Bind pose fallback
+            int boneCount = skeletalMesh->boneCount;
+            component->FinalBoneMatrices.clear();
+            component->FinalBoneMatrices.resize(boneCount, glm::mat4(1.0f));
         }
     }
 }
 
-// This function remains exactly the same as you had it
-void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform, SkeletalMeshComponent* component, Animation* animation, std::shared_ptr<SkeletalMeshData> skeletalMesh)
+void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform,
+    SkeletalMeshComponent* component, Animation* animation,
+    std::shared_ptr<SkeletalMeshData> skeletalMesh)
 {
+    if (!node) return;
+
     std::string nodeName = node->name;
     glm::mat4 nodeTransform = node->transformation;
 
-    Bone* Bone = animation->FindBone(nodeName);
+    // **CRITICAL FIX: Check if this node has animation data**
+    Bone* bone = animation->FindBone(nodeName);
 
-    if (Bone)
+    if (bone)
     {
-        Bone->Update(component->CurrentTime);
-        nodeTransform = Bone->GetLocalTransform();
+        // This bone is animated - use the animation transform
+        bone->Update(component->CurrentTime);
+        nodeTransform = bone->GetLocalTransform();
     }
+    // else: use the static transformation from the node hierarchy
 
+    // **KEY CALCULATION: Global = Parent * Local**
     glm::mat4 globalTransformation = parentTransform * nodeTransform;
 
+    // **CRITICAL: Only write to FinalBoneMatrices if this is actually a bone**
     auto& boneInfoMap = skeletalMesh->boneInfoMap;
-    if (boneInfoMap.find(nodeName) != boneInfoMap.end())
+    auto boneIt = boneInfoMap.find(nodeName);
+
+    if (boneIt != boneInfoMap.end())
     {
-        int index = boneInfoMap[nodeName].id;
-        glm::mat4 offset = boneInfoMap[nodeName].offset;
+        int boneID = boneIt->second.id;
+        glm::mat4 offsetMatrix = boneIt->second.offset;
 
-        if (component->FinalBoneMatrices.size() <= index) {
-            component->FinalBoneMatrices.resize(index + 1, glm::mat4(1.0f));
+        // Safety check
+        if (boneID >= 0 && boneID < component->FinalBoneMatrices.size())
+        {
+            // **THE MAGIC FORMULA:**
+            // FinalMatrix = GlobalTransform * OffsetMatrix
+            // 
+            // OffsetMatrix = Inverse Bind Pose (transforms from mesh space to bone space)
+            // GlobalTransform = Current animated bone position in world/model space
+            // 
+            // This formula says: "Take the vertex, transform it to bone-local space (offset),
+            // then transform it to the current animated position (global)"
+            component->FinalBoneMatrices[boneID] = globalTransformation * offsetMatrix;
         }
-
-        component->FinalBoneMatrices[index] = globalTransformation * offset;
+        else
+        {
+            std::cerr << "[Animator] ERROR: Bone ID " << boneID << " (" << nodeName
+                << ") out of range [0, " << component->FinalBoneMatrices.size() << ")\n";
+        }
     }
 
-    for (int i = 0; i < node->childrenCount; i++)
+    // **CRITICAL: Recurse through ALL children, not just named bones**
+    for (int i = 0; i < node->childrenCount && i < node->children.size(); i++)
+    {
         CalculateBoneTransform(&node->children[i], globalTransformation, component, animation, skeletalMesh);
+    }
 }
 
 void Animator::Cleanup() {}

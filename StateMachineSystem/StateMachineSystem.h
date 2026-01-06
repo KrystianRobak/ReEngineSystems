@@ -17,8 +17,16 @@ class REFLECTION_API StateMachineSystem : public System
 {
 public:
 
-	REFVARIABLE()
-	std::vector<std::string> ComponentsToRegister = {"StateMachine", "SkeletalMeshComponent" };
+    REFVARIABLE()
+        std::vector<std::string> ComponentsToRegister = { "StateMachine", "SkeletalMeshComponent" };
+
+    // --- DEPENDENCIES ---
+    // Logic runs early to set up the frame's intent.
+    REFVARIABLE()
+        std::vector<std::string> SystemsToRunAfter = {}; // If you have an input system
+
+    REFVARIABLE()
+        std::vector<std::string> WriteComponents = { "StateMachine", "SkeletalMeshComponent", "RigidBody" };
 
 	void Update(float dt);
 

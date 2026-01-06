@@ -21,7 +21,16 @@ class REFLECTION_API RenderOpenGL : public RenderSystem
 public:
 
 	REFVARIABLE()
-	std::vector<std::string> ComponentsToRegister = { "Transform"};
+		std::vector<std::string> ComponentsToRegister = { "Transform" };
+
+	// --- DEPENDENCIES ---
+	// Rendering waits for EVERYONE.
+	REFVARIABLE()
+		std::vector<std::string> SystemsToRunAfter = { "Animator", "Physics3D", "AiAssistant", "WorldGenSystem" };
+
+	// Often Renderers must run on the Main Thread due to OpenGL context limitations
+	REFVARIABLE()
+		bool RunOnMainThread = false;
 
 	virtual void InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger = nullptr) override;
 
@@ -81,6 +90,8 @@ private:
 		int materialId;
 		int subMeshIndex;
 		std::vector<glm::mat4> instanceMatrices;
+
+		std::vector<glm::mat4> boneMatrices;
 	};
 
 	// Helper to configure the matrix attributes on a VAO

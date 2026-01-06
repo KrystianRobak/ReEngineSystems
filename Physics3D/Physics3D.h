@@ -20,6 +20,14 @@ public:
         "Transform", "RigidBody", "BoxCollider", "StaticMesh"
     };
 
+    // --- DEPENDENCIES ---
+    // Physics must process the forces applied by the StateMachine
+    REFVARIABLE()
+        std::vector<std::string> SystemsToRunAfter = { "StateMachineSystem" };
+
+    REFVARIABLE()
+        std::vector<std::string> WriteComponents = { "Transform", "RigidBody" };
+
     void Update(float dt) override;
     void OnInit() override;
     void Cleanup();

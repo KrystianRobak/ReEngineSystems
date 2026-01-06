@@ -36,6 +36,28 @@ struct Animator_AutoRegister {
             };
             Animator_Variables.push_back(std::move(rv));
         }
+         vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "SystemsToRunAfter", "public",
+                false,
+                offsetof(Animator, SystemsToRunAfter),
+                vType,
+                "StateMachineSystem, Physics3D"
+            };
+            Animator_Variables.push_back(std::move(rv));
+        }
+         vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");
+        {
+            Reflection::ReflectedVariable rv = {
+                "WriteComponents", "public",
+                false,
+                offsetof(Animator, WriteComponents),
+                vType,
+                "SkeletalMeshComponent"
+            };
+            Animator_Variables.push_back(std::move(rv));
+        }
         ci.variables = Animator_Variables;
         Reflection::Registry::Instance().RegisterSystem(std::move(ci));
     }

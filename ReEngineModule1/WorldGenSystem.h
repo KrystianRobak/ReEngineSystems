@@ -12,6 +12,9 @@ public:
     REFVARIABLE()
         std::vector<std::string> ComponentsToRegister = {};
 
+    REFVARIABLE()
+        std::vector<std::string> SystemsToRunAfter = {};
+
     void Update(float dt) override {}
     void Cleanup() {}
 

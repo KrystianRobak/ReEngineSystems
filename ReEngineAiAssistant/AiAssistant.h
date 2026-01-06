@@ -17,7 +17,10 @@ class REFLECTION_API AiAssistant : public System
 public:
 
 	REFVARIABLE()
-	std::vector<std::string> ComponentsToRegister = {};
+		std::vector<std::string> ComponentsToRegister = {};
+
+	REFVARIABLE()
+		std::vector<std::string> SystemsToRunAfter = {};
 
 	void Update(float dt);
 

@@ -9,6 +9,7 @@
 #include "MaterialSystem/Material.h"
 
 #include "ReScene.h"
+#include <gtc/type_ptr.hpp>
 
 
 bool IsEntityVisible(const Frustum& frustum, const glm::mat4& modelMatrix, const glm::vec3& localMin, const glm::vec3& localMax)
@@ -91,11 +92,8 @@ void RenderOpenGL::Update(float dt)
 {
 
 }
-
 void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuffer* framebuffer)
 {
-
-
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
     glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
 
@@ -103,40 +101,42 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     cameraFrustum.Update(projection * view);
 
     std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
-
     std::vector<RenderBatch> batches;
 
-    // --- CULLING & BATCHING ---
+    // --- 1. CULLING & BATCHING ---
     for (const auto& cmd : RenderCommands) {
         auto& res = cmd.Primitive.Mesh;
         if (!res || !res->uploaded || !res->cpuMesh) continue;
 
-        // 1. BROAD PHASE: Check the whole object first
-        // If the entire building is behind us, don't waste time checking windows and doors.
+        // Broad Phase Culling
         if (!IsEntityVisible(cameraFrustum, cmd.Primitive.ModelMatrix, res->cpuMesh->aabbMin, res->cpuMesh->aabbMax)) {
             continue;
         }
 
-        // 2. NARROW PHASE: Check each sub-mesh
+        // Check if this is a Skeletal Mesh (Has bone data)
+        bool isSkeletal = !cmd.Primitive.FinalBoneMatrices.empty();
+
+        // Narrow Phase
         for (size_t i = 0; i < res->cpuMesh->meshes.size(); ++i) {
             const auto& subMesh = res->cpuMesh->meshes[i];
-
-            // Check if this specific part is visible
-            // Note: If subMesh has a LocalTransform, you must combine it: ModelMatrix * LocalTransform
-            glm::mat4 effectiveModelMatrix = cmd.Primitive.ModelMatrix; // * subMesh.LocalTransform;
+            glm::mat4 effectiveModelMatrix = cmd.Primitive.ModelMatrix;
 
             if (IsEntityVisible(cameraFrustum, effectiveModelMatrix, subMesh.aabbMin, subMesh.aabbMax)) {
 
-                // FIND OR CREATE BATCH
                 bool batchFound = false;
-                for (auto& batch : batches) {
-                    if (batch.resource == res &&
-                        batch.subMeshIndex == i && // Match specific sub-mesh
-                        batch.materialId == cmd.Primitive.MaterialId)
-                    {
-                        batch.instanceMatrices.push_back(effectiveModelMatrix);
-                        batchFound = true;
-                        break;
+
+                // We ONLY attempt to batch Static Meshes (Not Skeletal)
+                if (!isSkeletal) {
+                    for (auto& batch : batches) {
+                        if (batch.resource == res &&
+                            batch.subMeshIndex == i &&
+                            batch.materialId == cmd.Primitive.MaterialId &&
+                            batch.boneMatrices.empty()) // Ensure we don't merge into an animated batch
+                        {
+                            batch.instanceMatrices.push_back(effectiveModelMatrix);
+                            batchFound = true;
+                            break;
+                        }
                     }
                 }
 
@@ -146,16 +146,20 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                     newBatch.subMeshIndex = i;
                     newBatch.materialId = cmd.Primitive.MaterialId;
                     newBatch.instanceMatrices.push_back(effectiveModelMatrix);
+
+                    // --- COPY BONES IF SKELETAL ---
+                    if (isSkeletal) {
+                        newBatch.boneMatrices = cmd.Primitive.FinalBoneMatrices;
+                    }
+
                     batches.push_back(newBatch);
                 }
             }
         }
     }
 
-
-
-    // === Define Light Variables (Todo: Get from Commander/ECS) ===
-    glm::vec3 lightPos(-20.0f, 50.0f, -10.0f); // Directional Light Source
+    // Define Light Variables (Ideally from ECS)
+    glm::vec3 lightPos(-20.0f, 50.0f, -10.0f);
     glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 1.0f, 100.0f);
     glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 lightSpaceMatrix = lightProjection * lightView;
@@ -170,20 +174,27 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     shadowMapShader->Use();
     shadowMapShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
 
-    // Render Scene (Depth Only)
     for (auto& batch : batches) {
         if (batch.instanceMatrices.empty()) continue;
 
         glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
-        // Upload the matrices for THIS batch only
         glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4), batch.instanceMatrices.data(), GL_STREAM_DRAW);
 
         GLuint vao = batch.resource->VAOs[batch.subMeshIndex];
         uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
 
-        glBindVertexArray(vao);
-        SetupInstanceAttributes(vao); // Point attributes to mInstanceVBO
+        // --- SHADOW PASS ANIMATION UNIFORMS ---
+        if (!batch.boneMatrices.empty()) {
+            shadowMapShader->SetBool("uIsAnimated", true);
+            glUniformMatrix4fv(glGetUniformLocation(shadowMapShader->get_program_id(), "finalBones"),
+                (GLsizei)batch.boneMatrices.size(), GL_FALSE, glm::value_ptr(batch.boneMatrices[0]));
+        }
+        else {
+            shadowMapShader->SetBool("uIsAnimated", false);
+        }
 
+        glBindVertexArray(vao);
+        SetupInstanceAttributes(vao);
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -202,63 +213,46 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     for (auto& batch : batches) {
         if (batch.instanceMatrices.empty()) continue;
 
-        // A. Upload Matrices to GPU
-        // Bind the huge instance buffer
         glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
-        // Upload the matrices for THIS batch only
         glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4), batch.instanceMatrices.data(), GL_STREAM_DRAW);
 
-
         CompiledMaterial* mat = assetManager_->GetMaterial(batch.materialId);
-
         Shader* currentShader = nullptr;
 
         // 1. SELECT SHADER
         if (mat && mat->GLShader) {
-            // Use the shader generated by your Node Graph (Modified in Part 1)
             currentShader = mat->GLShader;
             currentShader->Use();
-
-            for (auto& [name, value] : mat->m_Parameters) {
-                currentShader->SetVec4(name, value);
-            }
-
-            // Bind Textures
-            int texSlot = 0;
-            for (auto& [samplerName, texRes] : mat->textures) {
-                if (texRes && texRes->uploaded) {
-                    glActiveTexture(GL_TEXTURE0 + texSlot);
-                    glBindTexture(GL_TEXTURE_2D, texRes->id);
-                    currentShader->SetInt(samplerName, texSlot);
-                    texSlot++;
-                }
-            }
         }
         else {
-            // Fallback to the default GBuffer shader provided above
             currentShader = geometryPassShader.get();
             currentShader->Use();
-
             currentShader->SetVec3("uAlbedo", glm::vec3(0.8f, 0.8f, 0.8f));
             currentShader->SetFloat("uMetallic", 0.0f);
             currentShader->SetFloat("uRoughness", 0.5f);
             currentShader->SetBool("uUseTextures", false);
         }
 
-        
-
         // 2. SET COMMON UNIFORMS
         currentShader->SetMat4("view", view);
         currentShader->SetMat4("projection", projection);
 
-        // 3. SET MATERIAL UNIFORMS (Graph Parameters)
+        // --- NEW: UPLOAD ANIMATION UNIFORMS ---
+        if (!batch.boneMatrices.empty()) {
+            currentShader->SetBool("uIsAnimated", true);
+            // Upload the bone array. Note: 'finalBones' must match the uniform name in GBuffer.vs
+            glUniformMatrix4fv(glGetUniformLocation(currentShader->get_program_id(), "finalBones"),
+                (GLsizei)batch.boneMatrices.size(), GL_FALSE, glm::value_ptr(batch.boneMatrices[0]));
+        }
+        else {
+            currentShader->SetBool("uIsAnimated", false);
+        }
+
+        // 3. SET MATERIAL PROPERTIES
         if (mat && mat->GLShader) {
-            // Apply Float/Vec parameters from the graph
             for (auto& [name, value] : mat->m_Parameters) {
                 currentShader->SetVec4(name, value);
             }
-
-            // Bind Textures from the graph
             int texSlot = 0;
             for (auto& [samplerName, texRes] : mat->textures) {
                 if (texRes && texRes->uploaded) {
@@ -275,47 +269,34 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
 
         glBindVertexArray(vao);
-        SetupInstanceAttributes(vao); // Point attributes to mInstanceVBO
-
+        SetupInstanceAttributes(vao);
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
-
     framebuffer->bind();
 
-
     // ====================================================
-    // PASS 3: Lighting Pass (Deferred)
+    // PASS 3: Lighting Pass (Deferred) - UNCHANGED
     // ====================================================
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     lightingPassShader->Use();
 
-    // Bind G-Buffer Textures for Reading
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gPosition);
+    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gPosition);
     lightingPassShader->SetInt("gPosition", 0);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, gNormal);
+    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gNormal);
     lightingPassShader->SetInt("gNormal", 1);
-
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
     lightingPassShader->SetInt("gAlbedoSpec", 2);
-
-    // Bind Shadow Map
-    glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
+    glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
     lightingPassShader->SetInt("shadowMap", 3);
 
-    // Set Lighting Uniforms
     lightingPassShader->SetVec3("viewPos", camera->CameraTransform.position);
     lightingPassShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
     lightingPassShader->SetVec3("lightPos", lightPos);
     lightingPassShader->SetVec3("lightColor", glm::vec3(1.0, 0.95, 0.9));
 
-    glDisable(GL_DEPTH_TEST); // Ensure quad draws over everything
-    RenderQuad();             // This now draws into your UI texture
+    glDisable(GL_DEPTH_TEST);
+    RenderQuad();
     glEnable(GL_DEPTH_TEST);
 
     glBindVertexArray(0);
@@ -344,19 +325,17 @@ void RenderOpenGL::WindowSizeListener()
 
 void RenderOpenGL::SetupInstanceAttributes(GLuint vao)
 {
-    // Bind the buffer containing the matrices (It must be bound to GL_ARRAY_BUFFER)
     glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
-
-    // Matrix is 4 vec4s. We need attributes 5, 6, 7, 8.
-    // Assuming sizeof(glm::mat4) == 64 bytes
     GLsizei vec4Size = sizeof(glm::vec4);
 
-    for (int i = 0; i < 4; i++) {
-        glEnableVertexAttribArray(5 + i);
-        glVertexAttribPointer(5 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(i * vec4Size));
+    // CHANGE: Start at Attribute 10 instead of 5
+    // 0=Pos, 1=Norm, 2=UV, 3=Tan, 4=BiTan, 5=BoneIDs, 6=Weights
+    int startLoc = 10;
 
-        // THIS IS THE KEY: 1 = Update per instance
-        glVertexAttribDivisor(5 + i, 1);
+    for (int i = 0; i < 4; i++) {
+        glEnableVertexAttribArray(startLoc + i);
+        glVertexAttribPointer(startLoc + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(i * vec4Size));
+        glVertexAttribDivisor(startLoc + i, 1);
     }
 }
 

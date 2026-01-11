@@ -6,7 +6,7 @@
 #include "Engine/Core/Coordinator/Coordinator.h"
 #include "Window/IWindow.h"
 #include "Logger.h"
-#include "InputEvent.h"
+#include "InputManagerApi.h"
 
 static KeyState TranslateKeyState(int action)
 {
@@ -34,9 +34,7 @@ void KeyCallback(GLFWwindow* window, int key, int, int action, int)
 
     auto pWindow = static_cast<IWindow*>(glfwGetWindowUserPointer(window));
 
-    Event InputEventHappend(Events::Window::Input::INPUT);
-    InputEventHappend.SetParam<InputEvent>("Input", e);
-    pWindow->EngineApi_->SendEvent(InputEventHappend);
+	pWindow->ApplicationApi_->GetInputManager()->PushEvent(e);
 }
 
 void MouseButtonCallback(GLFWwindow* window, int button, int action, int)
@@ -47,10 +45,20 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int)
     e.state = TranslateKeyState(action);
 
     auto pWindow = static_cast<IWindow*>(glfwGetWindowUserPointer(window));
+    pWindow->ApplicationApi_->GetInputManager()->PushEvent(e);
+}
 
-    Event InputEventHappend(Events::Window::Input::INPUT);
-    InputEventHappend.SetParam<InputEvent>("Input", e);
-    pWindow->EngineApi_->SendEvent(InputEventHappend);
+void CursorPositionCallback(GLFWwindow* window, double xpos, double ypos)
+{
+    InputEvent e{};
+    e.type = InputEvent::Type::MouseMove; // Set type
+    e.x = static_cast<float>(xpos);  // Set X
+    e.y = static_cast<float>(ypos);  // Set Y
+
+    // Retrieve your window wrapper to get access to the Engine/Input system
+    auto pWindow = static_cast<IWindow*>(glfwGetWindowUserPointer(window));
+    pWindow->ApplicationApi_->GetInputManager()->PushEvent(e);
+
 }
 
 static void OnFileDropCallback(GLFWwindow* window, int count, const char** paths)
@@ -112,6 +120,7 @@ bool OpenGlContext::init(IWindow* window)
     glfwSetKeyCallback(glwindow, KeyCallback);
     glfwSetMouseButtonCallback(glwindow, MouseButtonCallback);
     glfwSetDropCallback(glwindow, OnFileDropCallback);
+    glfwSetCursorPosCallback(glwindow, CursorPositionCallback);
     /*glfwSetScrollCallback(glWindow, on_scroll_callback);
     * 
     

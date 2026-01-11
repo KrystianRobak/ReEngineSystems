@@ -51,9 +51,10 @@ static inline void glfw_error_callback(int error, const char* description)
     LOGF_ERROR("GLFW Error %d : %s", error, description)
 }
 
-void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger)
+void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, IApplicationApi* application, std::shared_ptr<AssetManagerApi> AssetManger)
 {
     engine_ = engine;
+	application_ = application;
 
     assetManager_ = std::shared_ptr<AssetManagerApi>(AssetManger);
 

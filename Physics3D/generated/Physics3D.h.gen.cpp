@@ -32,7 +32,7 @@ struct Physics3D_AutoRegister {
                 false,
                 offsetof(Physics3D, ComponentsToRegister),
                 vType,
-                "Transform, RigidBody, BoxCollider, StaticMesh"
+                "Transform, RigidBody, BoxCollider"
             };
             Physics3D_Variables.push_back(std::move(rv));
         }

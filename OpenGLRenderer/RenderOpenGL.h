@@ -33,7 +33,7 @@ public:
 	REFVARIABLE()
 		bool RunOnMainThread = false;
 
-	virtual void InitApi(Editor::IEngineEditorApi* engine, std::shared_ptr<AssetManagerApi> AssetManger = nullptr) override;
+	virtual void InitApi(Editor::IEngineEditorApi* engine, IApplicationApi* application, std::shared_ptr<AssetManagerApi> AssetManger = nullptr) override;
 
 	virtual void InitRenderContext(IWindow* window) override;
 

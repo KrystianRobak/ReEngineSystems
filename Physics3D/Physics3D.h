@@ -17,7 +17,7 @@ REFSYSTEM()
 class REFLECTION_API Physics3D : public System {
 public:
     REFVARIABLE() std::vector<std::string> ComponentsToRegister = {
-        "Transform", "RigidBody", "BoxCollider", "StaticMesh"
+        "Transform", "RigidBody", "BoxCollider",
     };
 
     // --- DEPENDENCIES ---

@@ -71,6 +71,9 @@ void RenderOpenGL::InitRenderContext(IWindow* window)
     InitShadowMap();
     InitGBuffer(1920, 1080); // Initial size, should match viewport
 
+    glGenVertexArrays(1, &mDebugLineVAO);
+    glGenBuffers(1, &mDebugLineVBO);
+
     glGenBuffers(1, &mInstanceVBO);
     glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
     // Reserve space for ~10,000 instances (640KB), dynamic usage
@@ -91,7 +94,9 @@ IViewport* RenderOpenGL::CreateViewport(int width, int height)
 void RenderOpenGL::Update(float dt)
 {
 
+
 }
+
 void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuffer* framebuffer)
 {
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
@@ -100,38 +105,39 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     Frustum cameraFrustum;
     cameraFrustum.Update(projection * view);
 
-    std::vector<RenderCommand> RenderCommands = commander->ConsumeRenderCommands();
+    const std::vector<RenderCommand>& RenderCommands = commander->ConsumeRenderCommands();
     std::vector<RenderBatch> batches;
+
+    // Clear previous debug queue
+    mDebugSkeletonsToDraw.clear();
 
     // --- 1. CULLING & BATCHING ---
     for (const auto& cmd : RenderCommands) {
         auto& res = cmd.Primitive.Mesh;
         if (!res || !res->uploaded || !res->cpuMesh) continue;
 
-        // Broad Phase Culling
+        // Frustum Culling
         if (!IsEntityVisible(cameraFrustum, cmd.Primitive.ModelMatrix, res->cpuMesh->aabbMin, res->cpuMesh->aabbMax)) {
             continue;
         }
 
-        // Check if this is a Skeletal Mesh (Has bone data)
         bool isSkeletal = !cmd.Primitive.FinalBoneMatrices.empty();
 
-        // Narrow Phase
         for (size_t i = 0; i < res->cpuMesh->meshes.size(); ++i) {
             const auto& subMesh = res->cpuMesh->meshes[i];
             glm::mat4 effectiveModelMatrix = cmd.Primitive.ModelMatrix;
 
+            // Submesh Culling
             if (IsEntityVisible(cameraFrustum, effectiveModelMatrix, subMesh.aabbMin, subMesh.aabbMax)) {
-
                 bool batchFound = false;
 
-                // We ONLY attempt to batch Static Meshes (Not Skeletal)
+                // FIX: Never batch skeletal meshes. They require unique bone uniforms per entity.
                 if (!isSkeletal) {
                     for (auto& batch : batches) {
                         if (batch.resource == res &&
                             batch.subMeshIndex == i &&
                             batch.materialId == cmd.Primitive.MaterialId &&
-                            batch.boneMatrices.empty()) // Ensure we don't merge into an animated batch
+                            batch.boneMatrices.empty()) // Ensure we don't mix static into animated batches
                         {
                             batch.instanceMatrices.push_back(effectiveModelMatrix);
                             batchFound = true;
@@ -147,18 +153,20 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                     newBatch.materialId = cmd.Primitive.MaterialId;
                     newBatch.instanceMatrices.push_back(effectiveModelMatrix);
 
-                    // --- COPY BONES IF SKELETAL ---
                     if (isSkeletal) {
                         newBatch.boneMatrices = cmd.Primitive.FinalBoneMatrices;
-                    }
 
+                        // Capture for Debug Drawing
+                        auto skelComp = static_cast<SkeletalMeshComponent*>(engine_->GetComponent(cmd.Primitive.Entity, "SkeletalMeshComponent"));
+                        if (skelComp) mDebugSkeletonsToDraw.push_back(skelComp);
+                    }
                     batches.push_back(newBatch);
                 }
             }
         }
     }
 
-    // Define Light Variables (Ideally from ECS)
+    // Define Light for Shadows (Hardcoded for testing)
     glm::vec3 lightPos(-20.0f, 50.0f, -10.0f);
     glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 1.0f, 100.0f);
     glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -177,26 +185,38 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     for (auto& batch : batches) {
         if (batch.instanceMatrices.empty()) continue;
 
+        // Upload Instance Data
         glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
-        glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4), batch.instanceMatrices.data(), GL_STREAM_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4),
+            batch.instanceMatrices.data(), GL_STREAM_DRAW);
 
         GLuint vao = batch.resource->VAOs[batch.subMeshIndex];
         uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
 
-        // --- SHADOW PASS ANIMATION UNIFORMS ---
+        // --- UPLOAD BONES FOR SHADOWS ---
         if (!batch.boneMatrices.empty()) {
             shadowMapShader->SetBool("uIsAnimated", true);
-            glUniformMatrix4fv(glGetUniformLocation(shadowMapShader->get_program_id(), "finalBones"),
-                (GLsizei)batch.boneMatrices.size(), GL_FALSE, glm::value_ptr(batch.boneMatrices[0]));
+
+            // FIX: Pad bones to MAX_BONES (200) to prevent shader reading garbage
+            std::vector<glm::mat4> safeBones = batch.boneMatrices;
+            if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
+
+            glUniformMatrix4fv(
+                glGetUniformLocation(shadowMapShader->get_program_id(), "finalBones"),
+                200,
+                GL_FALSE,
+                glm::value_ptr(safeBones[0])
+            );
         }
         else {
             shadowMapShader->SetBool("uIsAnimated", false);
         }
 
         glBindVertexArray(vao);
-        SetupInstanceAttributes(vao);
+        SetupInstanceAttributes(vao); // Ensure instancing attributes are linked to this VAO
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // ====================================================
@@ -204,6 +224,9 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     // ====================================================
     glViewport(0, 0, currentWidth, currentHeight);
     glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+
+    // Clear Color (Position/Normal/Albedo) AND Depth
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     geometryPassShader->Use();
@@ -213,46 +236,36 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     for (auto& batch : batches) {
         if (batch.instanceMatrices.empty()) continue;
 
+        // 1. Upload Instancing Data
         glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
-        glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4), batch.instanceMatrices.data(), GL_STREAM_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4),
+            batch.instanceMatrices.data(), GL_STREAM_DRAW);
 
         CompiledMaterial* mat = assetManager_->GetMaterial(batch.materialId);
         Shader* currentShader = nullptr;
 
-        // 1. SELECT SHADER
+        // 2. Select Shader
         if (mat && mat->GLShader) {
             currentShader = mat->GLShader;
-            currentShader->Use();
         }
         else {
             currentShader = geometryPassShader.get();
-            currentShader->Use();
-            currentShader->SetVec3("uAlbedo", glm::vec3(0.8f, 0.8f, 0.8f));
-            currentShader->SetFloat("uMetallic", 0.0f);
-            currentShader->SetFloat("uRoughness", 0.5f);
-            currentShader->SetBool("uUseTextures", false);
         }
+        currentShader->Use();
 
-        // 2. SET COMMON UNIFORMS
+        // 3. Set Common Uniforms
         currentShader->SetMat4("view", view);
         currentShader->SetMat4("projection", projection);
 
-        // --- NEW: UPLOAD ANIMATION UNIFORMS ---
-        if (!batch.boneMatrices.empty()) {
-            currentShader->SetBool("uIsAnimated", true);
-            // Upload the bone array. Note: 'finalBones' must match the uniform name in GBuffer.vs
-            glUniformMatrix4fv(glGetUniformLocation(currentShader->get_program_id(), "finalBones"),
-                (GLsizei)batch.boneMatrices.size(), GL_FALSE, glm::value_ptr(batch.boneMatrices[0]));
-        }
-        else {
-            currentShader->SetBool("uIsAnimated", false);
-        }
+        // 4. Set Material Properties & Defaults
+        bool hasTextures = false;
 
-        // 3. SET MATERIAL PROPERTIES
-        if (mat && mat->GLShader) {
+        if (mat) {
+            // Apply Material Parameters (Colors, properties)
             for (auto& [name, value] : mat->m_Parameters) {
                 currentShader->SetVec4(name, value);
             }
+            // Bind Textures
             int texSlot = 0;
             for (auto& [samplerName, texRes] : mat->textures) {
                 if (texRes && texRes->uploaded) {
@@ -260,47 +273,111 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                     glBindTexture(GL_TEXTURE_2D, texRes->id);
                     currentShader->SetInt(samplerName, texSlot);
                     texSlot++;
+                    hasTextures = true;
                 }
             }
+
+            // Fallback defaults if material parameters are missing
+            if (mat->m_Parameters.find("uAlbedo") == mat->m_Parameters.end())
+                currentShader->SetVec3("uAlbedo", glm::vec3(1.0f, 1.0f, 1.0f));
+            if (mat->m_Parameters.find("uRoughness") == mat->m_Parameters.end())
+                currentShader->SetFloat("uRoughness", 0.5f);
+            if (mat->m_Parameters.find("uMetallic") == mat->m_Parameters.end())
+                currentShader->SetFloat("uMetallic", 0.0f);
+        }
+        else {
+            // Default grey material for missing materials
+            currentShader->SetVec3("uAlbedo", glm::vec3(0.8f, 0.8f, 0.8f));
+            currentShader->SetFloat("uMetallic", 0.0f);
+            currentShader->SetFloat("uRoughness", 0.5f);
         }
 
-        // 4. DRAW
+        // FIX: Explicitly set uUseTextures.
+        // If false, shader uses uAlbedo. If true, it samples textures.
+        currentShader->SetBool("uUseTextures", hasTextures);
+
+        // --- UPLOAD BONES FOR GEOMETRY ---
+        if (!batch.boneMatrices.empty()) {
+            currentShader->SetBool("uIsAnimated", true);
+
+            // FIX: Pad bones to MAX_BONES (200)
+            std::vector<glm::mat4> safeBones = batch.boneMatrices;
+            if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
+
+            GLint loc = glGetUniformLocation(currentShader->get_program_id(), "finalBones");
+            if (loc != -1) {
+                glUniformMatrix4fv(loc, 200, GL_FALSE, glm::value_ptr(safeBones[0]));
+            }
+        }
+        else {
+            currentShader->SetBool("uIsAnimated", false);
+        }
+
+        // FIX: BIND VAO! This was missing in your original code.
         GLuint vao = batch.resource->VAOs[batch.subMeshIndex];
         uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
 
         glBindVertexArray(vao);
-        SetupInstanceAttributes(vao);
+        SetupInstanceAttributes(vao); // Re-bind attribute pointers for this VAO
+
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
-    framebuffer->bind();
+    // Clean up
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // ====================================================
-    // PASS 3: Lighting Pass (Deferred) - UNCHANGED
+    // PASS 3: Lighting Pass (Quad Render)
     // ====================================================
+
+    // Bind the final output framebuffer (usually 0 for screen, or your specific FBO)
+    if (framebuffer) framebuffer->bind();
+    else glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    lightingPassShader->Use();
 
-    glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, gPosition);
+    lightingPassShader->Use();
+    
+    // Bind G-Buffer Textures
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
     lightingPassShader->SetInt("gPosition", 0);
-    glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, gNormal);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
     lightingPassShader->SetInt("gNormal", 1);
-    glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
     lightingPassShader->SetInt("gAlbedoSpec", 2);
-    glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
     lightingPassShader->SetInt("shadowMap", 3);
 
+    // Lighting Uniforms
     lightingPassShader->SetVec3("viewPos", camera->CameraTransform.position);
     lightingPassShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
     lightingPassShader->SetVec3("lightPos", lightPos);
     lightingPassShader->SetVec3("lightColor", glm::vec3(1.0, 0.95, 0.9));
 
+    // Render Full Screen Quad
+    // Note: We disable depth test because we want to draw over the whole screen
+    // regardless of the previous depth buffer state.
     glDisable(GL_DEPTH_TEST);
     RenderQuad();
     glEnable(GL_DEPTH_TEST);
 
-    glBindVertexArray(0);
-    glUseProgram(0);
+    // ====================================================
+    // PASS 4: Debug Rendering (Skeletons)
+    // ====================================================
+    // Only draw debug on top of the lighting pass
+    if (!mDebugSkeletonsToDraw.empty()) {
+        glDisable(GL_DEPTH_TEST); // Draw on top
+        RenderDebugSkeletons(mDebugSkeletonsToDraw, camera);
+        glEnable(GL_DEPTH_TEST);
+    }
 }
 
 void RenderOpenGL::Cleanup()
@@ -322,6 +399,118 @@ void RenderOpenGL::RecompileShader()
 void RenderOpenGL::WindowSizeListener()
 {
 }
+
+static void BuildBoneQuad(
+    const glm::vec3& p0,
+    const glm::vec3& p1,
+    const glm::mat4& view,
+    float pixelThickness,
+    float viewportHeight,
+    std::vector<glm::vec3>& outVerts)
+{
+    // Transform to view space
+    glm::vec4 v0 = view * glm::vec4(p0, 1.0f);
+    glm::vec4 v1 = view * glm::vec4(p1, 1.0f);
+
+    glm::vec3 dir = glm::normalize(glm::vec3(v1 - v0));
+
+    // Camera looks down -Z in view space
+    glm::vec3 viewDir(0.0f, 0.0f, -1.0f);
+
+    glm::vec3 right = glm::normalize(glm::cross(dir, viewDir));
+    if (glm::length(right) < 0.001f)
+        right = glm::vec3(1, 0, 0);
+
+    // Convert pixel thickness to view-space scale
+    float halfThickness =
+        (pixelThickness / viewportHeight) * -v0.z;
+
+    glm::vec3 offset = right * halfThickness;
+
+    glm::vec3 a = glm::vec3(v0) + offset;
+    glm::vec3 b = glm::vec3(v0) - offset;
+    glm::vec3 c = glm::vec3(v1) + offset;
+    glm::vec3 d = glm::vec3(v1) - offset;
+
+    // Two triangles
+    outVerts.push_back(a);
+    outVerts.push_back(b);
+    outVerts.push_back(c);
+
+    outVerts.push_back(c);
+    outVerts.push_back(b);
+    outVerts.push_back(d);
+}
+void RenderOpenGL::RenderDebugSkeletons(
+    const std::vector<SkeletalMeshComponent*>& components,
+    Camera* camera)
+{
+    if (components.empty()) return;
+
+    glm::mat4 view = ReCamera::GetViewMatrix(*camera);
+    glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
+
+    // Use your simple "LightSourceShader" (or any shader that outputs a solid color)
+    // Assuming 'shader' is your simple solid-color shader
+    shader->Use();
+    shader->SetMat4("projection", projection);
+    shader->SetMat4("view", view);
+    shader->SetVec3("lightColor", glm::vec3(0.0f, 1.0f, 0.0f)); // Draw in Green
+    shader->SetMat4("model", glm::mat4(1.0f));
+
+    glBindVertexArray(mDebugLineVAO);
+
+    mDebugQuadVertices.clear();
+
+    constexpr float BONE_THICKNESS_PX = 4.0f;
+
+    for (const auto* comp : components)
+    {
+        if (!comp || !comp->ShowDebugSkeleton) continue;
+
+        const auto& lines = comp->DebugBoneLines;
+        if (lines.size() < 6) continue;
+
+        for (size_t i = 0; i + 5 < lines.size(); i += 6)
+        {
+            glm::vec3 p0(lines[i + 0], lines[i + 1], lines[i + 2]);
+            glm::vec3 p1(lines[i + 3], lines[i + 4], lines[i + 5]);
+
+            BuildBoneQuad(
+                p0,
+                p1,
+                view,
+                BONE_THICKNESS_PX,
+                static_cast<float>(currentHeight),
+                mDebugQuadVertices
+            );
+        }
+    }
+
+    if (mDebugQuadVertices.empty()) return;
+
+    glBindVertexArray(mDebugLineVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, mDebugLineVBO);
+
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        mDebugQuadVertices.size() * sizeof(glm::vec3),
+        mDebugQuadVertices.data(),
+        GL_DYNAMIC_DRAW
+    );
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(
+        0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0
+    );
+
+    glDrawArrays(GL_TRIANGLES, 0,
+        static_cast<GLsizei>(mDebugQuadVertices.size()));
+
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
 
 void RenderOpenGL::SetupInstanceAttributes(GLuint vao)
 {

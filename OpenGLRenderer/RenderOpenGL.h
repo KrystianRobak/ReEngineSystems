@@ -14,6 +14,7 @@
 #include "Frustum.h"
 
 #include "ReCamera.h"
+#include <SkeletalMeshComponent.h>
 
 REFSYSTEM()
 class REFLECTION_API RenderOpenGL : public RenderSystem
@@ -62,6 +63,8 @@ private:
 	GLuint mVboVertices{};
 	GLuint mVboNormals{};
 
+	std::vector<glm::vec3> mDebugQuadVertices;
+
 	glm::mat4 projection;
 	glm::mat4 view;
 
@@ -81,6 +84,14 @@ public:
 	REFVARIABLE()
 		GLuint shadowMapTexture;
 private:
+
+	GLuint mDebugLineVAO = 0;
+	GLuint mDebugLineVBO = 0;
+	
+    // Deferred Debug List
+    std::vector<SkeletalMeshComponent*> mDebugSkeletonsToDraw;
+
+	void RenderDebugSkeletons(const std::vector<SkeletalMeshComponent*>& components, Camera* camera);
 	// A buffer to hold the model matrices for the current batch
 	GLuint mInstanceVBO;
 

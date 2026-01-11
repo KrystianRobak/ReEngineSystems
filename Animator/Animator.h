@@ -3,13 +3,13 @@
 #include "ReflectionMacros.h"
 #include "ReflectionCoreExport.h"
 #include <glm/glm.hpp>
+#include "Animation/Animation.h"
 #include <vector>
 #include <memory>
 
 // Forward Declarations
 struct SkeletalMeshComponent;
 struct SkeletalMeshData;
-class Animation;
 struct AssimpNodeData;
 
 REFSYSTEM()
@@ -19,20 +19,52 @@ public:
     REFVARIABLE()
         std::vector<std::string> ComponentsToRegister = { "SkeletalMeshComponent" };
 
-    // --- DEPENDENCIES ---
-    // Animator must run AFTER logic (state changes) and AFTER physics (if using root motion/ragdolls)
+    // Run after StateMachine so we pick up the latest requested animation
     REFVARIABLE()
         std::vector<std::string> SystemsToRunAfter = { "StateMachineSystem", "Physics3D" };
 
-    // It writes to the mesh component, preparing matrices for the renderer
     REFVARIABLE()
         std::vector<std::string> WriteComponents = { "SkeletalMeshComponent" };
 
     void Update(float dt) override;
-    void Cleanup();
+    void Cleanup() ;
+
+
+    int GetBoneIndex(Animation* anim, const std::string& nodeName) {
+        auto& cache = animCaches_[anim];
+
+        // Build cache on first use
+        if (cache.boneNameToIndex.empty()) {
+            auto& boneProps = anim->getBoneProps();
+            for (size_t i = 0; i < boneProps.size(); ++i) {
+                cache.boneNameToIndex[boneProps[i].name] = i;
+            }
+        }
+
+        auto it = cache.boneNameToIndex.find(nodeName);
+        return (it != cache.boneNameToIndex.end()) ? it->second : -1;
+    }
 
 private:
-    void CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform, SkeletalMeshComponent* component, Animation* animation, std::shared_ptr<SkeletalMeshData> skeletalMesh);
+
+    struct AnimationCache {
+        std::unordered_map<std::string, int> boneNameToIndex;
+    };
+
+    std::unordered_map<Animation*, AnimationCache> animCaches_;
+
+    // Standard playback
+    void CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform,
+        SkeletalMeshComponent* component, Animation* animation,
+        std::shared_ptr<SkeletalMeshData> skeletalMesh);
+
+    // Blending logic (PrevAnim -> NextAnim)
+    void CalculateBoneTransition(const AssimpNodeData* node, glm::mat4 parentTransform,
+        SkeletalMeshComponent* component,
+        Animation* prevAnim, Animation* nextAnim,
+        std::shared_ptr<SkeletalMeshData> skeletalMesh);
+
+private:
 };
 
 extern "C" REFLECTION_API System* CreateSystem();

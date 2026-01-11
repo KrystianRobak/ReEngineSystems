@@ -8,6 +8,7 @@
 #include <json/json.hpp>
 #include <filesystem>
 #include <iostream>
+#include "Api/AssetManagerApi.h"
 
 using json = nlohmann::json;
 
@@ -18,6 +19,8 @@ extern "C" REFLECTION_API System* CreateSystem() {
 
 void StateMachineSystem::Update(float dt)
 {
+    static bool debugSM = false;
+
     for (auto const& entity : mEntities)
     {
         // 1. Get Components
@@ -26,19 +29,48 @@ void StateMachineSystem::Update(float dt)
 
         if (!animGraph || !skelMesh) continue;
 
+        // --- LAZY LOAD RESOURCE ---
+        if (!animGraph->GraphResource && !animGraph->GraphAssetPath.empty()) {
+            std::cout << "[StateMachine] Lazy loading graph for Entity " << entity << ": " << animGraph->GraphAssetPath << "\n";
+            animGraph->GraphResource = engine_->GetAssetManager()->GetAnimationGraph(animGraph->GraphAssetPath);
+
+            // Initialize Defaults if loaded
+            if (animGraph->GraphResource) {
+                if (animGraph->CurrentNodeID == -1) {
+                    animGraph->CurrentNodeID = animGraph->GraphResource->EntryNodeID;
+                    std::cout << "[StateMachine] Set initial node to Entry: " << animGraph->CurrentNodeID << "\n";
+                }
+
+                // Copy defaults if not present
+                for (auto& [key, val] : animGraph->GraphResource->DefaultBlackboard) {
+                    if (animGraph->Blackboard.find(key) == animGraph->Blackboard.end()) {
+                        animGraph->Blackboard[key] = val;
+                    }
+                }
+            }
+            else {
+                std::cerr << "[StateMachine] Failed to load graph resource!\n";
+            }
+        }
+
         // If still no resource, skip
         if (!animGraph->GraphResource) continue;
 
         std::string targetAnimPath = "";
         std::string targetAnimName = "";
+        bool loop = true;
 
         // --- Priority 1: Interrupt Slot (e.g. Attacks, Hits) ---
         if (animGraph->IsSlotPlaying)
         {
             animGraph->SlotTimeRemaining -= dt;
             targetAnimName = animGraph->SlotAnimName; // Slots usually play by name or cached path
+            loop = false; // Slots are usually one-shot
 
-            if (animGraph->SlotTimeRemaining <= 0.0f) animGraph->IsSlotPlaying = false;
+            if (animGraph->SlotTimeRemaining <= 0.0f) {
+                animGraph->IsSlotPlaying = false;
+                //std::cout << "[StateMachine] Slot finished. Returning to graph.\n";
+            }
         }
         // --- Priority 2: State Machine Logic ---
         else
@@ -60,13 +92,13 @@ void StateMachineSystem::Update(float dt)
             if (currentNode)
             {
                 // Check Transitions
-                bool transitionHappened = false;
                 for (const auto& trans : res->Transitions)
                 {
                     if (trans.FromNodeID != animGraph->CurrentNodeID) continue;
 
                     if (CheckCondition(trans, animGraph))
                     {
+                        //std::cout << "[StateMachine] Transition: " << currentNode->Name << " -> Node " << trans.ToNodeID << "\n";
                         animGraph->CurrentNodeID = trans.ToNodeID;
                         skelMesh->CurrentTime = 0.0f; // Reset animation time for new state
 
@@ -77,7 +109,6 @@ void StateMachineSystem::Update(float dt)
                                 break;
                             }
                         }
-                        transitionHappened = true;
                         break; // Only take one transition per frame
                     }
                 }
@@ -85,23 +116,37 @@ void StateMachineSystem::Update(float dt)
                 // Set Target Animation from the (possibly new) Current Node
                 if (currentNode) {
                     targetAnimPath = currentNode->AnimationPath; // Use the path from Drag & Drop
-                    targetAnimName = currentNode->Name;          // Fallback / Debug name
+                    targetAnimName = currentNode->Name;          // Fallback
+                    loop = currentNode->IsLooping;
+                }
+            }
+            else {
+                if (!debugSM) {
+                    std::cerr << "[StateMachine] Invalid CurrentNodeID: " << animGraph->CurrentNodeID << "\n";
+                    debugSM = true;
                 }
             }
         }
 
         // --- Drive the Mesh Component ---
-        // We prioritize the Path if it exists, otherwise we might rely on the Name (legacy)
+        // Prioritize Path. If Path is empty, use Name (might be a keyword or fallback).
         std::string finalAnim = targetAnimPath.empty() ? targetAnimName : targetAnimPath;
 
-        if (!finalAnim.empty() && skelMesh->CurrentAnimationName != finalAnim)
+        if (!finalAnim.empty())
         {
-            skelMesh->CurrentAnimationName = finalAnim;
-
-            // Only reset time if we aren't in a slot (Slots handle their own time usually, or we reset above)
-            if (!animGraph->IsSlotPlaying) {
-                skelMesh->CurrentTime = 0.0f;
+            // Only update if changed to prevent constant resets (unless we need to force re-trigger)
+            if (skelMesh->CurrentAnimationName != finalAnim)
+            {
+                std::cout << "[StateMachine] Switch Anim: '" << skelMesh->CurrentAnimationName << "' -> '" << finalAnim << "'\n";
+                skelMesh->CurrentAnimationName = finalAnim;
+                
+                // Reset time when switching animations (unless we specifically want blending, which isn't impl yet)
+                // Note: If we just finished a slot, we might want to blend back to the graph state's current time?
+                // For now, hard reset is safer to ensure it starts playing.
+                skelMesh->CurrentTime = 0.0f; 
             }
+
+            skelMesh->IsLooping = loop;
         }
     }
 }

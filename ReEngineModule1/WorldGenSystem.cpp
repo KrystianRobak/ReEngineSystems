@@ -57,24 +57,22 @@ void WorldGenSystem::GenerateTerrain(int width, int depth, float scale, float he
 
     for (int z = 0; z < depth; z++) {
         for (int x = 0; x < width; x++) {
-            Vertex v;
             float posX = x - hf->halfWidth;
             float posZ = z - hf->halfDepth;
 
             // Sample height from the collider logic to ensure physical alignment
             float posY = hf->GetHeightAt(posX, posZ);
 
-            v.Position = glm::vec3(posX, posY, posZ);
+            meshData.vertices.push_back(glm::vec3(posX, posY, posZ));
 
             // Finite difference for Normals
             float hL = hf->GetHeightAt(posX - 0.1f, posZ);
             float hR = hf->GetHeightAt(posX + 0.1f, posZ);
             float hD = hf->GetHeightAt(posX, posZ - 0.1f);
             float hU = hf->GetHeightAt(posX, posZ + 0.1f);
-            v.Normal = glm::normalize(glm::vec3(hL - hR, 0.2f, hD - hU));
+            meshData.Normals.push_back(glm::normalize(glm::vec3(hL - hR, 0.2f, hD - hU)));
 
-            v.TexCoords = glm::vec2((float)x / width, (float)z / depth);
-            meshData.vertices.push_back(v);
+            meshData.TexCoords.push_back(glm::vec2((float)x / width, (float)z / depth));
         }
     }
 

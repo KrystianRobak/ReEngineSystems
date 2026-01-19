@@ -2,11 +2,13 @@
 #include "System/System.h"
 #include "ReflectionMacros.h"
 #include "ReflectionCoreExport.h"
-#include "Octree.h"
+#include "PhysicsWorld.h"
 #include <vector>
 #include <unordered_map>
 #include <glm/glm.hpp>
-#include "PhysicsWorld.h"
+
+// --- PHYSX INCLUDES ---
+#include <psyhx/PxPhysicsAPI.h>
 
 // Helper for OBB logic
 struct OBB {
@@ -60,6 +62,7 @@ struct SimulationIsland {
 //    bool includeStatic = true;              // Include static objects
 //    bool includeDynamic = true;             // Include dynamic objects
 //};
+using namespace physx;
 
 REFSYSTEM()
 class REFLECTION_API Physics3D : public System, public PhysicsWorld {
@@ -68,36 +71,29 @@ public:
         "Transform", "RigidBody", "BoxCollider",
     };
 
-    REFVARIABLE()
-        std::vector<std::string> SystemsToRunAfter = { "StateMachineSystem" };
+    REFVARIABLE() std::vector<std::string> SystemsToRunAfter = { "StateMachineSystem" };
+    REFVARIABLE() std::vector<std::string> WriteComponents = { "Transform", "RigidBody" };
 
-    REFVARIABLE()
-        std::vector<std::string> WriteComponents = { "Transform", "RigidBody" };
-
-    void Update(float dt) override;
     void OnInit() override;
+    void Update(float dt) override;
     void Cleanup();
 
     // ===========================
-    // PHYSICS QUERY API
+    // PHYSICS QUERY API (PhysX Implementations)
     // ===========================
 
-    // Raycast: Returns first hit along ray
     bool RaycastSingle(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
         RaycastHit& outHit, const PhysicsQueryParams& params = PhysicsQueryParams()) override;
 
-    // Raycast: Returns all hits along ray (sorted by distance)
     std::vector<RaycastHit> RaycastAll(const glm::vec3& origin, const glm::vec3& direction,
         float maxDistance, const PhysicsQueryParams& params = PhysicsQueryParams()) override;
 
-    // Sphere Cast: Sweeps a sphere along a direction
     bool SphereCastSingle(const glm::vec3& origin, float radius, const glm::vec3& direction,
         float maxDistance, RaycastHit& outHit, const PhysicsQueryParams& params = PhysicsQueryParams()) override;
 
     std::vector<RaycastHit> SphereCastAll(const glm::vec3& origin, float radius,
         const glm::vec3& direction, float maxDistance, const PhysicsQueryParams& params = PhysicsQueryParams()) override;
 
-    // Overlap Queries: Returns all entities overlapping a shape
     std::vector<Entity> OverlapSphere(const glm::vec3& center, float radius,
         const PhysicsQueryParams& params = PhysicsQueryParams()) override;
 
@@ -106,53 +102,30 @@ public:
         const PhysicsQueryParams& params = PhysicsQueryParams()) override;
 
 private:
-    // Core structures
-    std::unique_ptr<Octree> octree;
-    bool staticsInitialized = false;
-    std::unordered_map<AABB*, Entity> aabbToEntityMap;
-    std::vector<AABB*> currentFrameDynamics;
-    std::vector<AABB*> currentFrameStatics;
-    std::vector<std::pair<AABB*, AABB*>> potentialCollisions;
-    std::vector<CollisionManifold> manifolds;
+    // --- PHYSX CORE OBJECTS ---
+    PxFoundation* mFoundation = nullptr;
+    PxPhysics* mPhysics = nullptr;
+    PxDefaultCpuDispatcher* mDispatcher = nullptr;
+    PxScene* mScene = nullptr;
+    PxPvd* mPvd = nullptr; // Visual Debugger
+    PxMaterial* mDefaultMaterial = nullptr;
 
-    // Contact caching for warm starting
-    std::unordered_map<uint64_t, PersistentContact> contactCache;
+    // Map to keep track of which Entity owns which PhysX Actor
+    std::unordered_map<Entity, PxRigidActor*> mEntityActorMap;
 
-    // Island simulation
-    std::vector<SimulationIsland> islands;
-
-    const glm::vec3 gravity = glm::vec3(0.0f, -9.81f, 0.0f);
-    const int SOLVER_ITERATIONS = 10;
-
-    // Helpers
-    AABB* GetEntityAABB(Entity entity);
-    void SyncColliderTransform(Entity entity, class Transform* transform);
-    void ResolveHeightfieldCollision(Entity dynamicEntity, Entity terrainEntity);
-    void AddForceToEntity(Entity entity, glm::vec3 force);
+    // --- HELPERS ---
+    void InitPhysX();
+    void CreateActorForEntity(Entity entity);
+    void DestroyActorForEntity(Entity entity);
+    void SyncECSToPhysX();
+    // Original helper to auto-size boxes to meshes
     void FitCollidersToMeshes();
-    OBB BuildOBB(Entity entity);
-    glm::mat3 ComputeInverseInertiaTensor(float mass, const glm::vec3& halfExtents, const glm::quat& rotation);
 
-    // Contact caching
-    uint64_t MakePairKey(Entity a, Entity b);
-    void CleanContactCache();
-
-    // Island management
-    void BuildIslands();
-    void UpdateIslandSleeping(float dt);
-    void WakeIsland(Entity entity);
-
-    // Physics phases
-    void ApplyGravityAndForces(float dt);
-    void FindCollisions();
-    void ResolveIslandCollisions(SimulationIsland& island, float dt);
-    void IntegratePositions(float dt);
-    bool CheckCollisionSAT(Entity a, Entity b, CollisionManifold& outManifold);
-
-    // Query helpers
-    bool RayOBBIntersection(const glm::vec3& origin, const glm::vec3& direction,
-        const OBB& obb, float& tMin, float& tMax);
-    bool TestOBBOverlap(const OBB& a, const OBB& b);
+    // Converters
+    PxVec3 ToPxVec3(const glm::vec3& v) { return PxVec3(v.x, v.y, v.z); }
+    PxQuat ToPxQuat(const glm::quat& q) { return PxQuat(q.x, q.y, q.z, q.w); }
+    glm::vec3 ToGlmVec3(const PxVec3& v) { return glm::vec3(v.x, v.y, v.z); }
+    glm::quat ToGlmQuat(const PxQuat& q) { return glm::quat(q.w, q.x, q.y, q.z); }
 };
 
 extern "C" REFLECTION_API System* CreateSystem();

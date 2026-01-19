@@ -1,7 +1,7 @@
 #include "RenderOpenGL.h"
 
 #include "Components/Transform.h"
-
+#include "Components/LightSource.h"
 #include <thread>
 #include "MeshData.h"
 #include "StaticMesh.h"
@@ -11,6 +11,20 @@
 #include "ReScene.h"
 #include <gtc/type_ptr.hpp>
 
+struct GPULight {
+    glm::vec3 position;
+    glm::vec3 direction;
+    glm::vec3 color;
+    float intensity;
+    int type;
+    // Attenuation
+    float constant;
+    float linear;
+    float quadratic;
+    // Spot
+    float cutOff;
+    float outerCutOff;
+};
 
 bool IsEntityVisible(const Frustum& frustum, const glm::mat4& modelMatrix, const glm::vec3& localMin, const glm::vec3& localMax)
 {
@@ -128,17 +142,15 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
             const auto& subMesh = res->cpuMesh->meshes[i];
             glm::mat4 effectiveModelMatrix = cmd.Primitive.ModelMatrix;
 
-            // Submesh Culling
             if (IsEntityVisible(cameraFrustum, effectiveModelMatrix, subMesh.aabbMin, subMesh.aabbMax)) {
                 bool batchFound = false;
 
-                // FIX: Never batch skeletal meshes. They require unique bone uniforms per entity.
                 if (!isSkeletal) {
                     for (auto& batch : batches) {
                         if (batch.resource == res &&
                             batch.subMeshIndex == i &&
                             batch.materialId == cmd.Primitive.MaterialId &&
-                            batch.boneMatrices.empty()) // Ensure we don't mix static into animated batches
+                            batch.boneMatrices.empty())
                         {
                             batch.instanceMatrices.push_back(effectiveModelMatrix);
                             batchFound = true;
@@ -157,7 +169,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                     if (isSkeletal) {
                         newBatch.boneMatrices = cmd.Primitive.FinalBoneMatrices;
 
-                        // Capture for Debug Drawing
                         auto skelComp = static_cast<SkeletalMeshComponent*>(engine_->GetComponent(cmd.Primitive.Entity, "SkeletalMeshComponent"));
                         if (skelComp) mDebugSkeletonsToDraw.push_back(skelComp);
                     }
@@ -167,26 +178,82 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         }
     }
 
-    // Define Light for Shadows (Hardcoded for testing)
-    glm::vec3 lightPos(-20.0f, 50.0f, -10.0f);
-    glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 1.0f, 100.0f);
-    glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+    std::vector<GPULight> gpuLights;
+    glm::mat4 shadowLightSpaceMatrix = glm::mat4(1.0f);
+    bool shadowCasterFound = false;
+    glm::vec3 shadowLightDir = glm::vec3(-0.5f, -1.0f, -0.3f); // Default fallback
 
-    // ====================================================
-    // PASS 1: Shadow Map Generation
-    // ====================================================
+
+    auto& entities = mEntities;
+    for (auto& entity : entities) {
+
+        if (engine_->HasComponent(entity, "LightSource") && engine_->HasComponent(entity, "Transform")) {
+
+            auto lightComp = (LightSource*)engine_->GetComponent(entity, "LightSource");
+            auto transformComp = (Transform*)engine_->GetComponent(entity, "Transform");
+
+            GPULight l;
+            l.type = lightComp->type;
+            l.color = lightComp->LightColor;
+            l.intensity = lightComp->intensity;
+
+            // Get World Position and Direction from Transform Matrix
+            const glm::mat4& model = ReCamera::GetModelMatrix(*transformComp);
+            l.position = glm::vec3(model[3]);
+            l.direction = glm::normalize(-glm::vec3(model[2])); // Forward vector
+
+            l.constant = lightComp->constant;
+            l.linear = lightComp->linear;
+            l.quadratic = lightComp->quadratic;
+            l.cutOff = lightComp->cutOff;
+            l.outerCutOff = lightComp->outerCutOff;
+
+            gpuLights.push_back(l);
+
+            // Logic to pick the Shadow Caster (First Directional Light wins)
+            if (!shadowCasterFound && l.type == (int)LightType::Directional) {
+                // Configure Shadow Matrix based on this light's transform
+                float near_plane = 1.0f, far_plane = 100.0f;
+                // Note: Ortho size might need to be configurable in LightSource component
+                glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, near_plane, far_plane);
+
+                // Look at 0,0,0 from the light's position (or just use direction)
+                // For directional lights, position is just a reference point for the ortho box center
+                glm::vec3 target = l.position + l.direction;
+                glm::mat4 lightView = glm::lookAt(l.position, target, glm::vec3(0, 1, 0));
+
+                shadowLightSpaceMatrix = lightProjection * lightView;
+                shadowLightDir = l.direction; // For shader usage later
+                shadowCasterFound = true;
+            }
+        }
+    }
+
+    std::sort(gpuLights.begin(), gpuLights.end(), [](const GPULight& a, const GPULight& b) {
+        return a.type < b.type; // Directional (0) < Point (1) < Spot (2)
+        });
+
+    // Fallback if no light is found, keep the matrix valid to prevent crash
+    if (!shadowCasterFound) {
+        // Keep your original hardcoded matrix logic here as fallback
+        glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 1.0f, 100.0f);
+        glm::mat4 lightView = glm::lookAt(glm::vec3(-20.0f, 50.0f, -10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        shadowLightSpaceMatrix = lightProjection * lightView;
+    }
+
     glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
     glClear(GL_DEPTH_BUFFER_BIT);
 
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+
     shadowMapShader->Use();
-    shadowMapShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
+    shadowMapShader->SetMat4("lightSpaceMatrix", shadowLightSpaceMatrix);
 
     for (auto& batch : batches) {
         if (batch.instanceMatrices.empty()) continue;
 
-        // Upload Instance Data
         glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
         glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4),
             batch.instanceMatrices.data(), GL_STREAM_DRAW);
@@ -194,11 +261,9 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         GLuint vao = batch.resource->VAOs[batch.subMeshIndex];
         uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
 
-        // --- UPLOAD BONES FOR SHADOWS ---
         if (!batch.boneMatrices.empty()) {
             shadowMapShader->SetBool("uIsAnimated", true);
 
-            // FIX: Pad bones to MAX_BONES (200) to prevent shader reading garbage
             std::vector<glm::mat4> safeBones = batch.boneMatrices;
             if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
 
@@ -214,9 +279,12 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         }
 
         glBindVertexArray(vao);
-        SetupInstanceAttributes(vao); // Ensure instancing attributes are linked to this VAO
+        SetupInstanceAttributes(vao);
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
+
+    glCullFace(GL_BACK);
+    glEnable(GL_CULL_FACE);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -226,7 +294,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glViewport(0, 0, currentWidth, currentHeight);
     glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 
-    // Clear Color (Position/Normal/Albedo) AND Depth
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -237,7 +304,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     for (auto& batch : batches) {
         if (batch.instanceMatrices.empty()) continue;
 
-        // 1. Upload Instancing Data
         glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
         glBufferData(GL_ARRAY_BUFFER, batch.instanceMatrices.size() * sizeof(glm::mat4),
             batch.instanceMatrices.data(), GL_STREAM_DRAW);
@@ -245,7 +311,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         CompiledMaterial* mat = assetManager_->GetMaterial(batch.materialId);
         Shader* currentShader = nullptr;
 
-        // 2. Select Shader
         if (mat && mat->GLShader) {
             currentShader = mat->GLShader;
         }
@@ -254,19 +319,16 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         }
         currentShader->Use();
 
-        // 3. Set Common Uniforms
         currentShader->SetMat4("view", view);
         currentShader->SetMat4("projection", projection);
 
-        // 4. Set Material Properties & Defaults
         bool hasTextures = false;
 
         if (mat) {
-            // Apply Material Parameters (Colors, properties)
             for (auto& [name, value] : mat->m_Parameters) {
                 currentShader->SetVec4(name, value);
             }
-            // Bind Textures
+
             int texSlot = 0;
             for (auto& [samplerName, texRes] : mat->textures) {
                 if (texRes && texRes->uploaded) {
@@ -278,7 +340,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                 }
             }
 
-            // Fallback defaults if material parameters are missing
             if (mat->m_Parameters.find("uAlbedo") == mat->m_Parameters.end())
                 currentShader->SetVec3("uAlbedo", glm::vec3(1.0f, 1.0f, 1.0f));
             if (mat->m_Parameters.find("uRoughness") == mat->m_Parameters.end())
@@ -287,21 +348,16 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                 currentShader->SetFloat("uMetallic", 0.0f);
         }
         else {
-            // Default grey material for missing materials
             currentShader->SetVec3("uAlbedo", glm::vec3(0.8f, 0.8f, 0.8f));
             currentShader->SetFloat("uMetallic", 0.0f);
             currentShader->SetFloat("uRoughness", 0.5f);
         }
 
-        // FIX: Explicitly set uUseTextures.
-        // If false, shader uses uAlbedo. If true, it samples textures.
         currentShader->SetBool("uUseTextures", hasTextures);
 
-        // --- UPLOAD BONES FOR GEOMETRY ---
         if (!batch.boneMatrices.empty()) {
             currentShader->SetBool("uIsAnimated", true);
 
-            // FIX: Pad bones to MAX_BONES (200)
             std::vector<glm::mat4> safeBones = batch.boneMatrices;
             if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
 
@@ -314,17 +370,15 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
             currentShader->SetBool("uIsAnimated", false);
         }
 
-        // FIX: BIND VAO! This was missing in your original code.
         GLuint vao = batch.resource->VAOs[batch.subMeshIndex];
         uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
 
         glBindVertexArray(vao);
-        SetupInstanceAttributes(vao); // Re-bind attribute pointers for this VAO
+        SetupInstanceAttributes(vao); 
 
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
-    // Clean up
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -332,7 +386,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     // PASS 3: Lighting Pass (Quad Render)
     // ====================================================
 
-    // Bind the final output framebuffer (usually 0 for screen, or your specific FBO)
     if (framebuffer) framebuffer->bind();
     else glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -340,7 +393,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
 
     lightingPassShader->Use();
     
-    // Bind G-Buffer Textures
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, gPosition);
     lightingPassShader->SetInt("gPosition", 0);
@@ -357,15 +409,33 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
     lightingPassShader->SetInt("shadowMap", 3);
 
-    // Lighting Uniforms
     lightingPassShader->SetVec3("viewPos", camera->CameraTransform.position);
-    lightingPassShader->SetMat4("lightSpaceMatrix", lightSpaceMatrix);
-    lightingPassShader->SetVec3("lightPos", lightPos);
-    lightingPassShader->SetVec3("lightColor", glm::vec3(1.0, 0.95, 0.9));
+    lightingPassShader->SetMat4("lightSpaceMatrix", shadowLightSpaceMatrix);
 
-    // Render Full Screen Quad
-    // Note: We disable depth test because we want to draw over the whole screen
-    // regardless of the previous depth buffer state.
+    lightingPassShader->SetInt("uLightCount", (int)gpuLights.size());
+
+    for (size_t i = 0; i < gpuLights.size(); ++i) {
+        // Limit lights to prevent shader crash (MAX_LIGHTS defined in shader)
+        if (i >= 32) break;
+
+        std::string base = "lights[" + std::to_string(i) + "]";
+
+        lightingPassShader->SetInt(base + ".type", gpuLights[i].type);
+        lightingPassShader->SetVec3(base + ".Position", gpuLights[i].position);
+        lightingPassShader->SetVec3(base + ".Direction", gpuLights[i].direction);
+        lightingPassShader->SetVec3(base + ".Color", gpuLights[i].color);
+        lightingPassShader->SetFloat(base + ".Intensity", gpuLights[i].intensity);
+
+        // Attenuation
+        lightingPassShader->SetFloat(base + ".Constant", gpuLights[i].constant);
+        lightingPassShader->SetFloat(base + ".Linear", gpuLights[i].linear);
+        lightingPassShader->SetFloat(base + ".Quadratic", gpuLights[i].quadratic);
+
+        // Spot
+        lightingPassShader->SetFloat(base + ".CutOff", gpuLights[i].cutOff);
+        lightingPassShader->SetFloat(base + ".OuterCutOff", gpuLights[i].outerCutOff);
+    }
+
     glDisable(GL_DEPTH_TEST);
     RenderQuad();
     glEnable(GL_DEPTH_TEST);
@@ -373,12 +443,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     // ====================================================
     // PASS 4: Debug Rendering (Skeletons)
     // ====================================================
-    // Only draw debug on top of the lighting pass
-    if (!mDebugSkeletonsToDraw.empty()) {
-        glDisable(GL_DEPTH_TEST); // Draw on top
-        RenderDebugSkeletons(mDebugSkeletonsToDraw, camera);
-        glEnable(GL_DEPTH_TEST);
-    }
 }
 
 void RenderOpenGL::Cleanup()
@@ -409,20 +473,17 @@ static void BuildBoneQuad(
     float viewportHeight,
     std::vector<glm::vec3>& outVerts)
 {
-    // Transform to view space
     glm::vec4 v0 = view * glm::vec4(p0, 1.0f);
     glm::vec4 v1 = view * glm::vec4(p1, 1.0f);
 
     glm::vec3 dir = glm::normalize(glm::vec3(v1 - v0));
 
-    // Camera looks down -Z in view space
     glm::vec3 viewDir(0.0f, 0.0f, -1.0f);
 
     glm::vec3 right = glm::normalize(glm::cross(dir, viewDir));
     if (glm::length(right) < 0.001f)
         right = glm::vec3(1, 0, 0);
 
-    // Convert pixel thickness to view-space scale
     float halfThickness =
         (pixelThickness / viewportHeight) * -v0.z;
 
@@ -433,7 +494,6 @@ static void BuildBoneQuad(
     glm::vec3 c = glm::vec3(v1) + offset;
     glm::vec3 d = glm::vec3(v1) - offset;
 
-    // Two triangles
     outVerts.push_back(a);
     outVerts.push_back(b);
     outVerts.push_back(c);
@@ -451,12 +511,10 @@ void RenderOpenGL::RenderDebugSkeletons(
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
     glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
 
-    // Use your simple "LightSourceShader" (or any shader that outputs a solid color)
-    // Assuming 'shader' is your simple solid-color shader
     shader->Use();
     shader->SetMat4("projection", projection);
     shader->SetMat4("view", view);
-    shader->SetVec3("lightColor", glm::vec3(0.0f, 1.0f, 0.0f)); // Draw in Green
+    shader->SetVec3("lightColor", glm::vec3(0.0f, 1.0f, 0.0f));
     shader->SetMat4("model", glm::mat4(1.0f));
 
     glBindVertexArray(mDebugLineVAO);
@@ -518,8 +576,6 @@ void RenderOpenGL::SetupInstanceAttributes(GLuint vao)
     glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
     GLsizei vec4Size = sizeof(glm::vec4);
 
-    // CHANGE: Start at Attribute 10 instead of 5
-    // 0=Pos, 1=Norm, 2=UV, 3=Tan, 4=BiTan, 5=BoneIDs, 6=Weights
     int startLoc = 10;
 
     for (int i = 0; i < 4; i++) {
@@ -534,7 +590,6 @@ void RenderOpenGL::RenderQuad()
     if (quadVAO == 0)
     {
         float quadVertices[] = {
-            // positions        // texture Coords
             -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
             -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
              1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
@@ -563,7 +618,6 @@ void RenderOpenGL::InitGBuffer(int width, int height)
     glGenFramebuffers(1, &gBuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 
-    // 1. Position Buffer (High Precision Float for world coordinates)
     glGenTextures(1, &gPosition);
     glBindTexture(GL_TEXTURE_2D, gPosition);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
@@ -571,7 +625,6 @@ void RenderOpenGL::InitGBuffer(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
 
-    // 2. Normal Buffer (Float precision for smooth lighting)
     glGenTextures(1, &gNormal);
     glBindTexture(GL_TEXTURE_2D, gNormal);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
@@ -579,7 +632,6 @@ void RenderOpenGL::InitGBuffer(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
 
-    // 3. Albedo + Specular Buffer (Standard Color)
     glGenTextures(1, &gAlbedoSpec);
     glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -587,11 +639,9 @@ void RenderOpenGL::InitGBuffer(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
 
-    // Tell OpenGL to draw to these 3 attachments
     unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
     glDrawBuffers(3, attachments);
 
-    // 4. Depth Buffer (Standard Renderbuffer)
     glGenRenderbuffers(1, &rboDepth);
     glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
@@ -609,12 +659,12 @@ void RenderOpenGL::InitShadowMap()
 
     glGenTextures(1, &shadowMapTexture);
     glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
-    // Depth component only, 2048x2048 resolution
+
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    // Clamp to border to prevent artifacts outside shadow map
+
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };

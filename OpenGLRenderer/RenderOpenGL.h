@@ -85,6 +85,14 @@ public:
 		GLuint shadowMapTexture;
 private:
 
+	GLuint skyboxVAO = 0;
+	GLuint skyboxVBO = 0;
+	GLuint skyboxTexture = 0;
+	std::unique_ptr<Shader> skyboxShader;
+
+	void InitSkybox();
+	unsigned int LoadCubemap(std::vector<std::string> faces);
+
 	GLuint mDebugLineVAO = 0;
 	GLuint mDebugLineVBO = 0;
 	

@@ -86,6 +86,8 @@ void RenderOpenGL::InitRenderContext(IWindow* window)
     InitShadowMap();
     InitGBuffer(1920, 1080); // Initial size, should match viewport
 
+    InitSkybox();
+
     glGenVertexArrays(1, &mDebugLineVAO);
     glGenBuffers(1, &mDebugLineVBO);
 
@@ -441,6 +443,40 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glEnable(GL_DEPTH_TEST);
 
     // ====================================================
+    // NEW: Skybox Pass
+    // ====================================================
+
+    GLuint targetFBO = framebuffer ? framebuffer->GetFBO() : 0;
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, targetFBO);
+
+    glBlitFramebuffer(0, 0, currentWidth, currentHeight,
+        0, 0, currentWidth, currentHeight,
+        GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, targetFBO);
+
+    glDepthFunc(GL_LEQUAL);
+    skyboxShader->Use();
+
+    // Remove translation from view matrix so skybox stays centered on camera
+    glm::mat4 viewNoTrans = glm::mat4(glm::mat3(view));
+    skyboxShader->SetMat4("view", viewNoTrans);
+    skyboxShader->SetMat4("projection", projection);
+
+    glBindVertexArray(skyboxVAO);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTexture);
+    skyboxShader->SetInt("skybox", 0);
+
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
+
+    glDepthFunc(GL_LESS); // Set depth function back to default
+
+
+    // ====================================================
     // PASS 4: Debug Rendering (Skeletons)
     // ====================================================
 }
@@ -502,6 +538,111 @@ static void BuildBoneQuad(
     outVerts.push_back(b);
     outVerts.push_back(d);
 }
+
+void RenderOpenGL::InitSkybox()
+{
+    skyboxShader = std::make_unique<Shader>("shaders/Skybox/Skybox.vs", "shaders/Skybox/Skybox.fs");
+
+    float skyboxVertices[] = {
+        // positions          
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f
+    };
+
+    glGenVertexArrays(1, &skyboxVAO);
+    glGenBuffers(1, &skyboxVBO);
+    glBindVertexArray(skyboxVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+    // Order: Right, Left, Top, Bottom, Front, Back
+    // You need 6 images named appropriately in your assets folder
+    std::vector<std::string> faces
+    {
+        "Shaders/Skybox/right.jpg",
+        "Shaders/Skybox/left.jpg",
+        "Shaders/Skybox/top.jpg",
+        "Shaders/Skybox/bottom.jpg",
+        "Shaders/Skybox/front.jpg",
+        "Shaders/Skybox/back.jpg"
+    };
+
+    skyboxTexture = LoadCubemap(faces);
+}
+
+unsigned int RenderOpenGL::LoadCubemap(std::vector<std::string> faces)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+    int width, height, nrChannels;
+    for (unsigned int i = 0; i < faces.size(); i++)
+    {
+        unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+        if (data)
+        {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data
+            );
+            stbi_image_free(data);
+        }
+        else
+        {
+            LOGF_ERROR("Cubemap texture failed to load at path: %s", faces[i].c_str());
+            stbi_image_free(data);
+        }
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return textureID;
+}
+
 void RenderOpenGL::RenderDebugSkeletons(
     const std::vector<SkeletalMeshComponent*>& components,
     Camera* camera)

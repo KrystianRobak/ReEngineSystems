@@ -273,4 +273,18 @@ void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 pare
 }
 
 void Animator::Cleanup() {}
+int Animator::GetBoneIndex(Animation* anim, const std::string& nodeName)
+{
+    auto& cache = animCaches_[anim];
+
+    if (cache.boneNameToIndex.empty()) {
+        auto& boneProps = anim->getBoneProps();
+        for (size_t i = 0; i < boneProps.size(); ++i) {
+            cache.boneNameToIndex[boneProps[i].name] = i;
+        }
+    }
+
+    auto it = cache.boneNameToIndex.find(nodeName);
+    return (it != cache.boneNameToIndex.end()) ? it->second : -1;
+}
 extern "C" REFLECTION_API System* CreateSystem() { return new Animator(); }

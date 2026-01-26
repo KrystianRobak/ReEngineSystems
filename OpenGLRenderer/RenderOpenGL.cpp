@@ -600,12 +600,12 @@ void RenderOpenGL::InitSkybox()
     // You need 6 images named appropriately in your assets folder
     std::vector<std::string> faces
     {
-        "Shaders/Skybox/right.jpg",
-        "Shaders/Skybox/left.jpg",
-        "Shaders/Skybox/top.jpg",
-        "Shaders/Skybox/bottom.jpg",
-        "Shaders/Skybox/front.jpg",
-        "Shaders/Skybox/back.jpg"
+        "shaders/Skybox/right.jpg",
+        "shaders/Skybox/left.jpg",
+        "shaders/Skybox/top.jpg",
+        "shaders/Skybox/bottom.jpg",
+        "shaders/Skybox/front.jpg",
+        "shaders/Skybox/back.jpg"
     };
 
     skyboxTexture = LoadCubemap(faces);

@@ -13,7 +13,7 @@ struct StateMachineSystem_AutoRegister {
         Reflection::ClassInfo ci;
         ci.name = "StateMachineSystem";
         ci.fullName = "StateMachineSystem";
-        ci.module = "/Script/GeneratedModule";
+        ci.module = "StateMachineSystem";
         ci.size = sizeof(StateMachineSystem);
         ci.category = Reflection::TypeCategory::Class;
         ci.isClass = true;

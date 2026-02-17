@@ -13,7 +13,7 @@ struct Animator_AutoRegister {
         Reflection::ClassInfo ci;
         ci.name = "Animator";
         ci.fullName = "Animator";
-        ci.module = "/Script/GeneratedModule";
+        ci.module = "Animator";
         ci.size = sizeof(Animator);
         ci.category = Reflection::TypeCategory::Class;
         ci.isClass = true;

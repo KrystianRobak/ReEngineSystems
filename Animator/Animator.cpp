@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <iostream>
 
-// --- MATH HELPERS (Local to Animator to ensure Blending works independently) ---
 namespace AnimMath {
     float GetScaleFactor(float lastTimeStamp, float nextTimeStamp, float animationTime) {
         float scaleFactor = 0.0f;

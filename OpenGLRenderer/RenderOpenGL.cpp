@@ -116,6 +116,7 @@ void RenderOpenGL::Update(float dt)
 
 void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuffer* framebuffer)
 {
+    // --- 0. PREPARATION ---
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
     glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
 
@@ -180,15 +181,13 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         }
     }
 
+    // --- 2. LIGHT & SHADOW SETUP ---
     std::vector<GPULight> gpuLights;
     glm::mat4 shadowLightSpaceMatrix = glm::mat4(1.0f);
     bool shadowCasterFound = false;
-    glm::vec3 shadowLightDir = glm::vec3(-0.5f, -1.0f, -0.3f); // Default fallback
-
 
     auto& entities = mEntities;
     for (auto& entity : entities) {
-
         if (engine_->HasComponent(entity, "LightSource") && engine_->HasComponent(entity, "Transform")) {
 
             auto lightComp = (LightSource*)engine_->GetComponent(entity, "LightSource");
@@ -214,39 +213,46 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
 
             // Logic to pick the Shadow Caster (First Directional Light wins)
             if (!shadowCasterFound && l.type == (int)LightType::Directional) {
-                // Configure Shadow Matrix based on this light's transform
-                float near_plane = 1.0f, far_plane = 100.0f;
-                // Note: Ortho size might need to be configurable in LightSource component
-                glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, near_plane, far_plane);
+                // FIX 1: Increased Ortho size to ensure the scene fits in the shadow map
+                float near_plane = 1.0f, far_plane = 200.0f;
+                glm::mat4 lightProjection = glm::ortho(-100.0f, 100.0f, -100.0f, 100.0f, near_plane, far_plane);
 
-                // Look at 0,0,0 from the light's position (or just use direction)
-                // For directional lights, position is just a reference point for the ortho box center
                 glm::vec3 target = l.position + l.direction;
-                glm::mat4 lightView = glm::lookAt(l.position, target, glm::vec3(0, 1, 0));
+
+                // FIX 2: Prevent LookAt Crash (NaN) when looking straight Up/Down
+                glm::vec3 upVector = glm::vec3(0, 1, 0);
+                if (glm::abs(l.direction.y) > 0.99f) {
+                    upVector = glm::vec3(1, 0, 0);
+                }
+
+                glm::mat4 lightView = glm::lookAt(l.position, target, upVector);
 
                 shadowLightSpaceMatrix = lightProjection * lightView;
-                shadowLightDir = l.direction; // For shader usage later
                 shadowCasterFound = true;
             }
         }
     }
 
+    // Sort lights (Directional first)
     std::sort(gpuLights.begin(), gpuLights.end(), [](const GPULight& a, const GPULight& b) {
-        return a.type < b.type; // Directional (0) < Point (1) < Spot (2)
+        return a.type < b.type;
         });
 
-    // Fallback if no light is found, keep the matrix valid to prevent crash
+    // Fallback if no light is found
     if (!shadowCasterFound) {
-        // Keep your original hardcoded matrix logic here as fallback
-        glm::mat4 lightProjection = glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 1.0f, 100.0f);
+        glm::mat4 lightProjection = glm::ortho(-100.0f, 100.0f, -100.0f, 100.0f, 1.0f, 200.0f);
         glm::mat4 lightView = glm::lookAt(glm::vec3(-20.0f, 50.0f, -10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         shadowLightSpaceMatrix = lightProjection * lightView;
     }
 
+    // ====================================================
+    // PASS 1: Shadow Map (Depth Only)
+    // ====================================================
     glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
     glClear(GL_DEPTH_BUFFER_BIT);
 
+    // FIX 3: Front Face Culling to solve Peter Panning (Detached Shadows)
     glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
 
@@ -266,14 +272,13 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         if (!batch.boneMatrices.empty()) {
             shadowMapShader->SetBool("uIsAnimated", true);
 
+            // Safe bone upload
             std::vector<glm::mat4> safeBones = batch.boneMatrices;
             if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
 
             glUniformMatrix4fv(
                 glGetUniformLocation(shadowMapShader->get_program_id(), "finalBones"),
-                200,
-                GL_FALSE,
-                glm::value_ptr(safeBones[0])
+                200, GL_FALSE, glm::value_ptr(safeBones[0])
             );
         }
         else {
@@ -285,9 +290,8 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
+    // Reset Culling for Geometry Pass
     glCullFace(GL_BACK);
-    glEnable(GL_CULL_FACE);
-
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // ====================================================
@@ -314,7 +318,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         Shader* currentShader = nullptr;
 
         if (mat && mat->GLShader) {
-            currentShader = mat->GLShader;
+            currentShader = mat->GLShader.get();
         }
         else {
             currentShader = geometryPassShader.get();
@@ -342,6 +346,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                 }
             }
 
+            // Set defaults if not present
             if (mat->m_Parameters.find("uAlbedo") == mat->m_Parameters.end())
                 currentShader->SetVec3("uAlbedo", glm::vec3(1.0f, 1.0f, 1.0f));
             if (mat->m_Parameters.find("uRoughness") == mat->m_Parameters.end())
@@ -359,7 +364,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
 
         if (!batch.boneMatrices.empty()) {
             currentShader->SetBool("uIsAnimated", true);
-
             std::vector<glm::mat4> safeBones = batch.boneMatrices;
             if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
 
@@ -376,8 +380,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         uint32_t count = batch.resource->indexCounts[batch.subMeshIndex];
 
         glBindVertexArray(vao);
-        SetupInstanceAttributes(vao); 
-
+        SetupInstanceAttributes(vao);
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
@@ -394,7 +397,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     lightingPassShader->Use();
-    
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, gPosition);
     lightingPassShader->SetInt("gPosition", 0);
@@ -407,17 +410,16 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
     lightingPassShader->SetInt("gAlbedoSpec", 2);
 
+    // Bind Shadow Map to Slot 3
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
     lightingPassShader->SetInt("shadowMap", 3);
-
     lightingPassShader->SetVec3("viewPos", camera->CameraTransform.position);
     lightingPassShader->SetMat4("lightSpaceMatrix", shadowLightSpaceMatrix);
 
     lightingPassShader->SetInt("uLightCount", (int)gpuLights.size());
 
     for (size_t i = 0; i < gpuLights.size(); ++i) {
-        // Limit lights to prevent shader crash (MAX_LIGHTS defined in shader)
         if (i >= 32) break;
 
         std::string base = "lights[" + std::to_string(i) + "]";
@@ -428,12 +430,9 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         lightingPassShader->SetVec3(base + ".Color", gpuLights[i].color);
         lightingPassShader->SetFloat(base + ".Intensity", gpuLights[i].intensity);
 
-        // Attenuation
         lightingPassShader->SetFloat(base + ".Constant", gpuLights[i].constant);
         lightingPassShader->SetFloat(base + ".Linear", gpuLights[i].linear);
         lightingPassShader->SetFloat(base + ".Quadratic", gpuLights[i].quadratic);
-
-        // Spot
         lightingPassShader->SetFloat(base + ".CutOff", gpuLights[i].cutOff);
         lightingPassShader->SetFloat(base + ".OuterCutOff", gpuLights[i].outerCutOff);
     }
@@ -443,14 +442,14 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glEnable(GL_DEPTH_TEST);
 
     // ====================================================
-    // NEW: Skybox Pass
+    // PASS 4: Skybox Pass
     // ====================================================
 
     GLuint targetFBO = framebuffer ? framebuffer->GetFBO() : 0;
 
+    // Blit Depth Buffer so Skybox renders behind objects
     glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, targetFBO);
-
     glBlitFramebuffer(0, 0, currentWidth, currentHeight,
         0, 0, currentWidth, currentHeight,
         GL_DEPTH_BUFFER_BIT, GL_NEAREST);
@@ -460,7 +459,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glDepthFunc(GL_LEQUAL);
     skyboxShader->Use();
 
-    // Remove translation from view matrix so skybox stays centered on camera
     glm::mat4 viewNoTrans = glm::mat4(glm::mat3(view));
     skyboxShader->SetMat4("view", viewNoTrans);
     skyboxShader->SetMat4("projection", projection);
@@ -473,12 +471,12 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
 
-    glDepthFunc(GL_LESS); // Set depth function back to default
-
+    glDepthFunc(GL_LESS);
 
     // ====================================================
-    // PASS 4: Debug Rendering (Skeletons)
+    // PASS 5: Debug Rendering
     // ====================================================
+    RenderDebugSkeletons(mDebugSkeletonsToDraw, camera);
 }
 
 void RenderOpenGL::Cleanup()

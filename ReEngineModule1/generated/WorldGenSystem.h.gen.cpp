@@ -24,7 +24,7 @@ struct WorldGenSystem_AutoRegister {
         Reflection::ClassInfo ci;
         ci.name = "WorldGenSystem";
         ci.fullName = "WorldGenSystem";
-        ci.module = "/Script/GeneratedModule";
+        ci.module = "WorldGeneration";
         ci.size = sizeof(WorldGenSystem);
         ci.category = Reflection::TypeCategory::Class;
         ci.isClass = true;

@@ -153,20 +153,17 @@ void StateMachineSystem::Update(float dt)
 
 bool StateMachineSystem::CheckCondition(const GraphTransition& trans, StateMachine* comp)
 {
-    // If the variable doesn't exist in the entity's blackboard, fail safely
     if (comp->Blackboard.find(trans.ConditionParam) == comp->Blackboard.end()) return false;
 
     AnimVar val = comp->Blackboard[trans.ConditionParam];
 
     if (val.Type == AnimVarType::Float) {
-        // Use FloatVal (matching Editor serialization)
         if (trans.Operation == ConditionOp::Greater) return val.fVal > trans.Threshold;
         if (trans.Operation == ConditionOp::Less)    return val.fVal < trans.Threshold;
         if (trans.Operation == ConditionOp::Equal)   return std::abs(val.fVal - trans.Threshold) < 0.001f;
         if (trans.Operation == ConditionOp::NotEqual) return std::abs(val.fVal - trans.Threshold) > 0.001f;
     }
     else if (val.Type == AnimVarType::Bool) {
-        // Use BoolVal
         bool target = (trans.Threshold > 0.5f);
         if (trans.Operation == ConditionOp::Equal)   return val.bVal == target;
         if (trans.Operation == ConditionOp::NotEqual) return val.bVal != target;

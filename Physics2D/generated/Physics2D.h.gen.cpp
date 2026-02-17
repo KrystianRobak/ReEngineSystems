@@ -11,7 +11,7 @@ struct Physics2D_AutoRegister {
         Reflection::ClassInfo ci;
         ci.name = "Physics2D";
         ci.fullName = "Physics2D";
-        ci.module = "/Script/GeneratedModule";
+        ci.module = "Physics2D";
         ci.size = sizeof(Physics2D);
         ci.category = Reflection::TypeCategory::Class;
         ci.isClass = true;

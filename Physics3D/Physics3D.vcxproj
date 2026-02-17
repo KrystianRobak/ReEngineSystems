@@ -125,7 +125,7 @@
       <AdditionalDependencies>opengl32.lib;glfw3.lib;glew32.lib;assimp-vc143-mtd.lib;ReflectionCore.lib;ReEngineCore.lib;%(AdditionalDependencies);PhysX_64.lib;PhysXCommon_64.lib;PhysXFoundation_64.lib;PhysX_64.lib;PhysXCommon_64.lib;PhysXFoundation_64.lib;PhysXExtensions_static_64.lib;PhysXPvdSDK_static_64.lib;PhysXCooking_64.lib</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>$(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\.venv\Scripts\python.exe $(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\CodeGen.py --scan-dir $(ProjectDir) --out-dir $(ProjectDir)generated\ --ms-includes "$(MyIncludes)"</Command>
+      <Command>$(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\.venv\Scripts\python.exe $(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\CodeGen.py --scan-dir $(ProjectDir) --out-dir $(ProjectDir)generated\ --name "$(ProjectName)" --ms-includes "$(MyIncludes)"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <PropertyGroup>

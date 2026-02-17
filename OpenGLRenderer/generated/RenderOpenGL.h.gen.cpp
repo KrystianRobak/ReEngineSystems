@@ -13,7 +13,7 @@ struct RenderOpenGL_AutoRegister {
         Reflection::ClassInfo ci;
         ci.name = "RenderOpenGL";
         ci.fullName = "RenderOpenGL";
-        ci.module = "/Script/GeneratedModule";
+        ci.module = "OpenGLRenderer";
         ci.size = sizeof(RenderOpenGL);
         ci.category = Reflection::TypeCategory::Class;
         ci.isClass = true;

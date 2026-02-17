@@ -9,6 +9,8 @@
 
 // --- PHYSX INCLUDES ---
 #include <psyhx/PxPhysicsAPI.h>
+#include <psyhx/extensions/PxDefaultStreams.h>
+#include <psyhx/cooking/PxCooking.h>
 
 // Helper for OBB logic
 struct OBB {
@@ -68,7 +70,7 @@ REFSYSTEM()
 class REFLECTION_API Physics3D : public System, public PhysicsWorld {
 public:
     REFVARIABLE() std::vector<std::string> ComponentsToRegister = {
-        "Transform", "RigidBody", "BoxCollider",
+        "Transform", "RigidBody"
     };
 
     REFVARIABLE() std::vector<std::string> SystemsToRunAfter = { "StateMachineSystem" };

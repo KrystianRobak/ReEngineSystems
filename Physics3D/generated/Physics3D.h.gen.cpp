@@ -13,7 +13,7 @@ struct Physics3D_AutoRegister {
         Reflection::ClassInfo ci;
         ci.name = "Physics3D";
         ci.fullName = "Physics3D";
-        ci.module = "/Script/GeneratedModule";
+        ci.module = "Physics3D";
         ci.size = sizeof(Physics3D);
         ci.category = Reflection::TypeCategory::Class;
         ci.isClass = true;
@@ -34,7 +34,7 @@ struct Physics3D_AutoRegister {
                 false,
                 offsetof(Physics3D, ComponentsToRegister),
                 vType,
-                "Transform, RigidBody, BoxCollider"
+                "Transform, RigidBody"
             };
             Physics3D_Variables.push_back(std::move(rv));
         }

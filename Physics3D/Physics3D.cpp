@@ -7,6 +7,8 @@
 #include <iostream>
 #include <algorithm>
 
+#include <MeshCollider.h>
+
 // PhysX Error Callback
 class UserErrorCallback : public PxErrorCallback {
 public:
@@ -90,9 +92,13 @@ void Physics3D::Update(float dt) {
     // 2. Sync ECS -> PhysX (Create actors for new entities)
     for (Entity entity : mEntities) {
         if (mEntityActorMap.find(entity) == mEntityActorMap.end()) {
-            // Only create if it has required components
-            if (engine_->HasComponent(entity, "Transform") &&
-                engine_->HasComponent(entity, "BoxCollider")) { // Currently only supporting Box
+
+            bool hasTransform = engine_->HasComponent(entity, "Transform");
+            bool hasBox = engine_->HasComponent(entity, "BoxCollider");
+            bool hasMesh = engine_->HasComponent(entity, "MeshCollider");
+
+            // Create actor if it has a Transform AND (BoxCollider OR MeshCollider)
+            if (hasTransform && (hasBox || hasMesh)) {
                 CreateActorForEntity(entity);
             }
         }
@@ -150,69 +156,130 @@ void Physics3D::Update(float dt) {
 
 void Physics3D::CreateActorForEntity(Entity entity) {
     auto* tx = (Transform*)engine_->GetComponent(entity, "Transform");
-    auto* rb = (RigidBody*)engine_->GetComponent(entity, "RigidBody"); // Can be null (implies static if logic dictates)
-    auto* box = (BoxCollider*)engine_->GetComponent(entity, "BoxCollider");
+    if (!tx) return;
 
-    if (!tx || !box) return;
+    // 1. Get Components
+   
+    bool hasbox = engine_->HasComponent(entity, "BoxCollider");
+    bool hasMeshCol = engine_->HasComponent(entity, "MeshCollider");
 
+    auto* rb = (RigidBody*)engine_->GetComponent(entity, "RigidBody");
+
+    // Exit if no collision data exists
+    if (!hasbox && !hasMeshCol) return;
+
+    // 2. Prepare Transform (PhysX requires normalized quaternions)
     glm::quat q = tx->rotation;
-
-    // Czy kwaternion jest "pusty"? Ustaw domyœlny
     if (glm::length(q) < 0.0001f) {
-        q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f); // w, x, y, z - Identity
+        q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     }
     else {
-        q = glm::normalize(q); // PhysX WYMAGA znormalizowanego kwaternionu
+        q = glm::normalize(q);
     }
-    // Prepare Geometry
-    // Note: PhysX boxes are Half-Extents
-    glm::vec3 halfExtents = (box->size * tx->scale) * 0.5f;
-    // Prevent zero-size collision which crashes PhysX
-    halfExtents = glm::max(halfExtents, glm::vec3(0.01f));
 
-    PxBoxGeometry geometry(halfExtents.x, halfExtents.y, halfExtents.z);
-
-    // Prepare Transform
     PxTransform pxTransform(ToPxVec3(tx->position), ToPxQuat(q));
-
     PxRigidActor* actor = nullptr;
-    bool isStatic = (rb == nullptr) || (rb->isStatic);
 
-    if (isStatic) {
-        actor = mPhysics->createRigidStatic(pxTransform);
-    }
-    else {
-        PxRigidDynamic* dynamic = mPhysics->createRigidDynamic(pxTransform);
-        // Calculate Mass Properties
-        PxRigidBodyExt::updateMassAndInertia(*dynamic, rb->mass);
+    // =========================================================
+    // OPTION A: MESH COLLIDER (Static Maps / Buildings)
+    // =========================================================
+    if (hasMeshCol) {
 
-        // Apply initial velocity if any
-        dynamic->setLinearVelocity(ToPxVec3(rb->velocity));
+        auto* meshCol = (MeshCollider*)engine_->GetComponent(entity, "MeshCollider");
+        // Triangle Meshes MUST be static in PhysX. 
+        // We ignore RigidBody dynamic settings here to prevent crashes.
+        PxRigidStatic* staticActor = mPhysics->createRigidStatic(pxTransform);
 
-        if (rb->lockAngular) {
-            dynamic->setRigidDynamicLockFlag(PxRigidDynamicLockFlag::eLOCK_ANGULAR_X, true);
-            dynamic->setRigidDynamicLockFlag(PxRigidDynamicLockFlag::eLOCK_ANGULAR_Y, true);
-            dynamic->setRigidDynamicLockFlag(PxRigidDynamicLockFlag::eLOCK_ANGULAR_Z, true);
+        // Check if we have the cooked binary blob from AssetSerializer
+        if (!meshCol->meshData->physicsData.empty()) {
+
+            // A. Create Input Stream from the loaded memory blob
+            PxDefaultMemoryInputData inputData(
+                meshCol->meshData->physicsData.data(),
+                (PxU32)meshCol->meshData->physicsData.size()
+            );
+
+            // B. Create the Mesh Object directly (No Cooking overhead!)
+            PxTriangleMesh* triMesh = mPhysics->createTriangleMesh(inputData);
+
+            if (triMesh) {
+                // Apply Transform Scaling
+                PxMeshScale scale(ToPxVec3(tx->scale), PxQuat(PxIdentity));
+                PxTriangleMeshGeometry triGeom(triMesh, scale);
+
+                // Create and Attach Shape
+                PxShape* shape = mPhysics->createShape(triGeom, *mDefaultMaterial);
+                staticActor->attachShape(*shape);
+
+                // Cleanup: The shape holds the reference now, so we release our local pointer
+                triMesh->release();
+                shape->release();
+            }
+            else {
+                std::cerr << "[Physics] Failed to create triangle mesh from binary data." << std::endl;
+            }
+        }
+        else {
+            std::cerr << "[Physics] MeshCollider found but 'physicsData' is empty. Did you re-import the asset?" << std::endl;
         }
 
-        // Damping
-        dynamic->setLinearDamping(0.01f);
-        dynamic->setAngularDamping(0.05f);
+        actor = staticActor;
+    }
+    // =========================================================
+    // OPTION B: BOX COLLIDER (Dynamic Props / Players)
+    // =========================================================
+    else if (hasbox) {
 
-        actor = dynamic;
+        auto* box = (BoxCollider*)engine_->GetComponent(entity, "BoxCollider");
+        // Calculate Half-Extents (PhysX uses half-sizes)
+        glm::vec3 halfExtents = (box->size * tx->scale) * 0.5f;
+        halfExtents = glm::max(halfExtents, glm::vec3(0.01f)); // Prevent zero-size crash
+
+        PxBoxGeometry geometry(halfExtents.x, halfExtents.y, halfExtents.z);
+
+        // Determine if Static or Dynamic
+        bool isStatic = (rb == nullptr) || (rb->isStatic);
+
+        if (isStatic) {
+            actor = mPhysics->createRigidStatic(pxTransform);
+        }
+        else {
+            PxRigidDynamic* dynamic = mPhysics->createRigidDynamic(pxTransform);
+
+            // Mass & Inertia
+            PxRigidBodyExt::updateMassAndInertia(*dynamic, rb->mass);
+
+            // Velocity
+            dynamic->setLinearVelocity(ToPxVec3(rb->velocity));
+
+            // Locking
+            if (rb->lockAngular) {
+                dynamic->setRigidDynamicLockFlag(PxRigidDynamicLockFlag::eLOCK_ANGULAR_X, true);
+                dynamic->setRigidDynamicLockFlag(PxRigidDynamicLockFlag::eLOCK_ANGULAR_Y, true);
+                dynamic->setRigidDynamicLockFlag(PxRigidDynamicLockFlag::eLOCK_ANGULAR_Z, true);
+            }
+
+            // Damping (Drag)
+            dynamic->setLinearDamping(0.01f);
+            dynamic->setAngularDamping(0.05f);
+
+            actor = dynamic;
+        }
+
+        if (actor) {
+            PxShape* shape = mPhysics->createShape(geometry, *mDefaultMaterial);
+
+            // Apply Box Offset
+            PxTransform offset(ToPxVec3(box->offset));
+            shape->setLocalPose(offset);
+
+            actor->attachShape(*shape);
+            shape->release();
+        }
     }
 
+    // 3. Final Registration
     if (actor) {
-        // Create Shape
-        PxShape* shape = mPhysics->createShape(geometry, *mDefaultMaterial);
-
-        // Apply Offset
-        PxTransform offset(ToPxVec3(box->offset));
-        shape->setLocalPose(offset);
-
-        actor->attachShape(*shape);
-        shape->release();
-
         // Store Entity ID in userData for raycasting identification
         actor->userData = (void*)(uintptr_t)entity;
 
@@ -230,40 +297,31 @@ void Physics3D::SyncECSToPhysX() {
         Entity entity = pair.first;
         PxRigidActor* actor = pair.second;
 
-        // Skip static objects (they shouldn't move)
         if (actor->getType() == PxActorType::eRIGID_STATIC) continue;
 
         PxRigidDynamic* dynamic = (PxRigidDynamic*)actor;
 
-        // Get ECS Components
         auto* tx = (Transform*)engine_->GetComponent(entity, "Transform");
         auto* rb = (RigidBody*)engine_->GetComponent(entity, "RigidBody");
 
         if (!tx || !rb) continue;
 
-        // --- 1. SYNC VELOCITY (Gameplay Input -> Physics) ---
-        // We compare the ECS velocity (set by PlayerController) with PhysX's current velocity.
-        // If they differ significantly, it means the Game Logic tried to change it.
+
         glm::vec3 currentPhysXVel = ToGlmVec3(dynamic->getLinearVelocity());
         if (glm::distance(rb->velocity, currentPhysXVel) > 0.1f) {
             dynamic->setLinearVelocity(ToPxVec3(rb->velocity));
-            dynamic->wakeUp(); // Ensure object isn't sleeping
+            dynamic->wakeUp();
         }
 
-        // --- 2. SYNC ANGULAR VELOCITY ---
         glm::vec3 currentPhysXAngVel = ToGlmVec3(dynamic->getAngularVelocity());
         if (glm::distance(rb->angularVelocity, currentPhysXAngVel) > 0.1f) {
             dynamic->setAngularVelocity(ToPxVec3(rb->angularVelocity));
             dynamic->wakeUp();
         }
 
-        // --- 3. TELEPORTATION (Transform -> Physics) ---
-        // If the position is DRASTICALLY different, assume it's a teleport.
-        // We use a larger threshold so we don't fight the physics engine's micro-adjustments.
         PxTransform physPose = dynamic->getGlobalPose();
         glm::vec3 physPos = ToGlmVec3(physPose.p);
 
-        // Threshold: If ECS position is > 1.0 unit away from Physics, force teleport
         if (glm::distance(tx->position, physPos) > 1.0f) {
             PxTransform newPose(ToPxVec3(tx->position), ToPxQuat(tx->rotation));
             dynamic->setGlobalPose(newPose);

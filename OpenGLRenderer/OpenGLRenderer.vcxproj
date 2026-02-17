@@ -119,7 +119,7 @@
       <AdditionalDependencies>opengl32.lib;glfw3.lib;glew32.lib;assimp-vc143-mtd.lib;ReflectionCore.lib;ReEngineCore.lib;ReEngine.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>$(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\.venv\Scripts\python.exe $(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\CodeGen.py --scan-dir $(ProjectDir) --out-dir $(ProjectDir)generated\ --ms-includes "$(MyIncludes)"</Command>
+      <Command>$(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\.venv\Scripts\python.exe $(SolutionDir)..\ReEngine\Tools\PyhtonCodeGen\CodeGen.py --scan-dir $(ProjectDir) --out-dir $(ProjectDir)generated\ --name $(ProjectName) --ms-includes "$(MyIncludes)"</Command>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <PropertyGroup>

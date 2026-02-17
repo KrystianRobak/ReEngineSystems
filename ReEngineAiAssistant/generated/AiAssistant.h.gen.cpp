@@ -24,7 +24,7 @@ struct AiAssistant_AutoRegister {
         Reflection::ClassInfo ci;
         ci.name = "AiAssistant";
         ci.fullName = "AiAssistant";
-        ci.module = "/Script/GeneratedModule";
+        ci.module = "ReEngineAiAssistant";
         ci.size = sizeof(AiAssistant);
         ci.category = Reflection::TypeCategory::Class;
         ci.isClass = true;

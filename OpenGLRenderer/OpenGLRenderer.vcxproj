@@ -154,7 +154,6 @@
     <ClCompile Include="Context\OpenGlContext.cpp" />
     <ClCompile Include="Context\OpenGlFrameBuffer.cpp" />
     <ClCompile Include="Context\UIContext.cpp" />
-    <ClCompile Include="OpenGLViewport.cpp" />
     <ClCompile Include="RenderOpenGL.cpp" />
     <ClCompile Include="Window.cpp" />
   </ItemGroup>
@@ -175,7 +174,6 @@
     <ClInclude Include="Frustum.h" />
     <ClInclude Include="OpenGLViewport.h" />
     <ClInclude Include="RenderOpenGL.h" />
-    <ClInclude Include="RenderOptimalization.h" />
     <ClInclude Include="Window.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

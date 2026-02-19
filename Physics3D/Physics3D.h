@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include <glm/glm.hpp>
+#include "ReTypes.h"
 
 // --- PHYSX INCLUDES ---
 #include <psyhx/PxPhysicsAPI.h>
@@ -42,6 +43,13 @@ struct PersistentContact {
     int framesSinceUpdate = 0;
 };
 
+struct CollisionEventData {
+    Entity EntityA;
+    Entity EntityB;
+    bool IsTrigger;
+    bool HasEnded;
+};
+
 // ISLAND-BASED SLEEPING: Groups of connected objects that sleep together
 struct SimulationIsland {
     std::vector<Entity> entities;
@@ -67,7 +75,7 @@ struct SimulationIsland {
 using namespace physx;
 
 REFSYSTEM()
-class REFLECTION_API Physics3D : public System, public PhysicsWorld {
+class REFLECTION_API Physics3D : public System, public PhysicsWorld, public PxSimulationEventCallback {
 public:
     REFVARIABLE() std::vector<std::string> ComponentsToRegister = {
         "Transform", "RigidBody"
@@ -80,9 +88,10 @@ public:
     void Update(float dt) override;
     void Cleanup();
 
-    // ===========================
-    // PHYSICS QUERY API (PhysX Implementations)
-    // ===========================
+    void OnBeginSimulation() override;
+
+    void OnEndSimulation() override;
+
 
     bool RaycastSingle(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
         RaycastHit& outHit, const PhysicsQueryParams& params = PhysicsQueryParams()) override;
@@ -103,6 +112,14 @@ public:
         const glm::quat& rotation = glm::quat(1, 0, 0, 0),
         const PhysicsQueryParams& params = PhysicsQueryParams()) override;
 
+    void onConstraintBreak(PxConstraintInfo* constraints, PxU32 count) override {}
+    void onWake(PxActor** actors, PxU32 count) override {}
+    void onSleep(PxActor** actors, PxU32 count) override {}
+
+    void onContact(const PxContactPairHeader& pairHeader, const PxContactPair* pairs, PxU32 nbPairs) override;
+    void onTrigger(PxTriggerPair* pairs, PxU32 count) override;
+    void onAdvance(const PxRigidBody* const* bodyBuffer, const PxTransform* poseBuffer, const PxU32 count) override {}
+
 private:
     // --- PHYSX CORE OBJECTS ---
     PxFoundation* mFoundation = nullptr;
@@ -114,6 +131,7 @@ private:
 
     // Map to keep track of which Entity owns which PhysX Actor
     std::unordered_map<Entity, PxRigidActor*> mEntityActorMap;
+    std::vector<CollisionEventData> mCollisionEvents;
 
     // --- HELPERS ---
     void InitPhysX();

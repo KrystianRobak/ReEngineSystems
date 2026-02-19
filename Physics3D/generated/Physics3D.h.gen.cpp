@@ -25,6 +25,8 @@ struct Physics3D_AutoRegister {
             Physics3D_Bases.push_back(Reflection::BaseClassInfo{ __base, (reinterpret_cast<std::size_t>(static_cast<System*>(reinterpret_cast<Physics3D*>(1))) - 1) });
         if (auto* __base = Reflection::Registry::Instance().FindClass("PhysicsWorld"))
             Physics3D_Bases.push_back(Reflection::BaseClassInfo{ __base, (reinterpret_cast<std::size_t>(static_cast<PhysicsWorld*>(reinterpret_cast<Physics3D*>(1))) - 1) });
+        if (auto* __base = Reflection::Registry::Instance().FindClass("PxSimulationEventCallback"))
+            Physics3D_Bases.push_back(Reflection::BaseClassInfo{ __base, (reinterpret_cast<std::size_t>(static_cast<PxSimulationEventCallback*>(reinterpret_cast<Physics3D*>(1))) - 1) });
         ci.bases = Physics3D_Bases;
         Physics3D_Variables.clear();
         auto* vType = Reflection::Registry::Instance().GetOrCreateType("std::vector<std::basic_string<char>>");

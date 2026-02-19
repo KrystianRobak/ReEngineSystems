@@ -66,9 +66,6 @@
     <ClCompile Include="..\..\ReEngine\Libs\Include\imgui\ImGuizmo.cpp">
       <Filter>Pliki źródłowe\ImGui</Filter>
     </ClCompile>
-    <ClCompile Include="OpenGLViewport.cpp">
-      <Filter>Pliki źródłowe</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="RenderOpenGL.h">
@@ -117,9 +114,6 @@
       <Filter>Pliki źródłowe\ImGui</Filter>
     </ClInclude>
     <ClInclude Include="OpenGLViewport.h">
-      <Filter>Pliki nagłówkowe</Filter>
-    </ClInclude>
-    <ClInclude Include="RenderOptimalization.h">
       <Filter>Pliki nagłówkowe</Filter>
     </ClInclude>
     <ClInclude Include="Frustum.h">

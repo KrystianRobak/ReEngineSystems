@@ -1,4 +1,4 @@
-#include "RenderOpenGL.h"
+﻿#include "RenderOpenGL.h"
 
 #include "Components/Transform.h"
 #include "Components/LightSource.h"
@@ -28,10 +28,7 @@ struct GPULight {
 
 bool IsEntityVisible(const Frustum& frustum, const glm::mat4& modelMatrix, const glm::vec3& localMin, const glm::vec3& localMax)
 {
-    // Fast algorithm to transform an AABB into World Space
-    // Source: "Transforming Axis-Aligned Bounding Boxes" by Jim Arvo
-
-    glm::vec3 globalCenter = glm::vec3(modelMatrix[3]); // Translation part
+    glm::vec3 globalCenter = glm::vec3(modelMatrix[3]);
 
     glm::vec3 right = glm::vec3(modelMatrix[0]);
     glm::vec3 up = glm::vec3(modelMatrix[1]);
@@ -40,13 +37,11 @@ bool IsEntityVisible(const Frustum& frustum, const glm::mat4& modelMatrix, const
     glm::vec3 localCenter = (localMin + localMax) * 0.5f;
     glm::vec3 localExtents = (localMax - localMin) * 0.5f;
 
-    // Transform center
     glm::vec3 newCenter = globalCenter +
         (right * localCenter.x) +
         (up * localCenter.y) +
         (forward * localCenter.z);
 
-    // Transform extents (take absolute value of rotation to fit the box)
     glm::vec3 newExtents = glm::vec3(
         std::abs(right.x) * localExtents.x + std::abs(up.x) * localExtents.y + std::abs(forward.x) * localExtents.z,
         std::abs(right.y) * localExtents.x + std::abs(up.y) * localExtents.y + std::abs(forward.y) * localExtents.z,
@@ -68,7 +63,7 @@ static inline void glfw_error_callback(int error, const char* description)
 void RenderOpenGL::InitApi(Editor::IEngineEditorApi* engine, IApplicationApi* application, std::shared_ptr<AssetManagerApi> AssetManger)
 {
     engine_ = engine;
-	application_ = application;
+    application_ = application;
 
     assetManager_ = std::shared_ptr<AssetManagerApi>(AssetManger);
 
@@ -84,7 +79,7 @@ void RenderOpenGL::InitRenderContext(IWindow* window)
     shadowMapShader = std::make_unique<Shader>("shaders/Deferred/ShadowMap.vs", "shaders/Deferred/ShadowMap.fs");
 
     InitShadowMap();
-    InitGBuffer(1920, 1080); // Initial size, should match viewport
+    InitGBuffer(1920, 1080);
 
     InitSkybox();
 
@@ -93,7 +88,6 @@ void RenderOpenGL::InitRenderContext(IWindow* window)
 
     glGenBuffers(1, &mInstanceVBO);
     glBindBuffer(GL_ARRAY_BUFFER, mInstanceVBO);
-    // Reserve space for ~10,000 instances (640KB), dynamic usage
     glBufferData(GL_ARRAY_BUFFER, 10000 * sizeof(glm::mat4), nullptr, GL_STREAM_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -116,7 +110,6 @@ void RenderOpenGL::Update(float dt)
 
 void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuffer* framebuffer)
 {
-    // --- 0. PREPARATION ---
     glm::mat4 view = ReCamera::GetViewMatrix(*camera);
     glm::mat4 projection = ReCamera::GetProjectionMatrix(*camera);
 
@@ -126,15 +119,12 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     const std::vector<RenderCommand>& RenderCommands = commander->ConsumeRenderCommands();
     std::vector<RenderBatch> batches;
 
-    // Clear previous debug queue
     mDebugSkeletonsToDraw.clear();
 
-    // --- 1. CULLING & BATCHING ---
     for (const auto& cmd : RenderCommands) {
         auto& res = cmd.Primitive.Mesh;
         if (!res || !res->uploaded || !res->cpuMesh) continue;
 
-        // Frustum Culling
         if (!IsEntityVisible(cameraFrustum, cmd.Primitive.ModelMatrix, res->cpuMesh->aabbMin, res->cpuMesh->aabbMax)) {
             continue;
         }
@@ -181,8 +171,8 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         }
     }
 
-    // --- 2. LIGHT & SHADOW SETUP ---
     std::vector<GPULight> gpuLights;
+    // Initialize with Identity to prevent garbage data if no lights exist
     glm::mat4 shadowLightSpaceMatrix = glm::mat4(1.0f);
     bool shadowCasterFound = false;
 
@@ -198,10 +188,10 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
             l.color = lightComp->LightColor;
             l.intensity = lightComp->intensity;
 
-            // Get World Position and Direction from Transform Matrix
+            // Ensure we use the global model matrix for light position/direction
             const glm::mat4& model = ReCamera::GetModelMatrix(*transformComp);
             l.position = glm::vec3(model[3]);
-            l.direction = glm::normalize(-glm::vec3(model[2])); // Forward vector
+            l.direction = glm::normalize(-glm::vec3(model[2]));
 
             l.constant = lightComp->constant;
             l.linear = lightComp->linear;
@@ -211,21 +201,25 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
 
             gpuLights.push_back(l);
 
-            // Logic to pick the Shadow Caster (First Directional Light wins)
+            // We only use the FIRST directional light for the shadow map
             if (!shadowCasterFound && l.type == (int)LightType::Directional) {
-                // FIX 1: Increased Ortho size to ensure the scene fits in the shadow map
-                float near_plane = 1.0f, far_plane = 200.0f;
-                glm::mat4 lightProjection = glm::ortho(-100.0f, 100.0f, -100.0f, 100.0f, near_plane, far_plane);
+                // Expanded planes to ensure large scenes are covered
+                float near_plane = 0.1f, far_plane = 1000.0f;
 
-                glm::vec3 target = l.position + l.direction;
+                // Note: The ortho size (175) determines shadow resolution density.
+                // If shadows are pixelated, reduce 175. If shadows clip, increase 175.
+                glm::mat4 lightProjection = glm::ortho(-175.0f, 175.0f, -175.0f, 175.0f, near_plane, far_plane);
 
-                // FIX 2: Prevent LookAt Crash (NaN) when looking straight Up/Down
+                // Use 'Up' vector check to prevent LookAt singularity
                 glm::vec3 upVector = glm::vec3(0, 1, 0);
                 if (glm::abs(l.direction.y) > 0.99f) {
                     upVector = glm::vec3(1, 0, 0);
                 }
 
-                glm::mat4 lightView = glm::lookAt(l.position, target, upVector);
+                // Center the shadow map slightly ahead of the light position or at world center
+                // Ideally, this should follow the camera, but centering on World (0,0,0) is safe for static scenes.
+                glm::vec3 lookTarget = l.position + l.direction;
+                glm::mat4 lightView = glm::lookAt(l.position, lookTarget, upVector);
 
                 shadowLightSpaceMatrix = lightProjection * lightView;
                 shadowCasterFound = true;
@@ -233,15 +227,17 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         }
     }
 
-    // Sort lights (Directional first)
     std::sort(gpuLights.begin(), gpuLights.end(), [](const GPULight& a, const GPULight& b) {
         return a.type < b.type;
         });
 
-    // Fallback if no light is found
+    // Fallback if no directional light is found (Prevents shader using identity matrix)
     if (!shadowCasterFound) {
-        glm::mat4 lightProjection = glm::ortho(-100.0f, 100.0f, -100.0f, 100.0f, 1.0f, 200.0f);
-        glm::mat4 lightView = glm::lookAt(glm::vec3(-20.0f, 50.0f, -10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 lightProjection = glm::ortho(-175.0f, 175.0f, -175.0f, 175.0f, 0.1f, 1000.0f);
+        glm::mat4 lightView = glm::lookAt(
+            glm::vec3(-40.0f, 300.0f, -135.0f),
+            glm::vec3(0.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, 1.0f, 0.0f));
         shadowLightSpaceMatrix = lightProjection * lightView;
     }
 
@@ -252,9 +248,16 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    // FIX 3: Front Face Culling to solve Peter Panning (Detached Shadows)
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
+    // BUG FIX #1: GL_FRONT culling removes flat surfaces (floor) entirely from the shadow map
+    // because flat planes only have top-facing (front) polygons. This makes the floor invisible
+    // to the shadow depth pass -> no shadow can ever appear on it.
+    // Also, for boxes sitting ON the floor, only the bottom face (same depth as floor) was
+    // rendered -> zero depth contrast -> shadow comparison fails even for elevated objects.
+    // Fix: disable culling so ALL faces (including floor top, platform top) write to shadow map.
+    // Hardware polygon offset replaces cull-trick for acne prevention.
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(3.0f, 6.0f); // push shadow-map depth away from light to prevent self-shadowing
 
     shadowMapShader->Use();
     shadowMapShader->SetMat4("lightSpaceMatrix", shadowLightSpaceMatrix);
@@ -272,7 +275,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         if (!batch.boneMatrices.empty()) {
             shadowMapShader->SetBool("uIsAnimated", true);
 
-            // Safe bone upload
             std::vector<glm::mat4> safeBones = batch.boneMatrices;
             if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
 
@@ -290,7 +292,10 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
-    // Reset Culling for Geometry Pass
+    // BUG FIX #1 (cleanup): disable polygon offset and restore normal backface culling
+    // for all subsequent geometry passes.
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -346,7 +351,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
                 }
             }
 
-            // Set defaults if not present
             if (mat->m_Parameters.find("uAlbedo") == mat->m_Parameters.end())
                 currentShader->SetVec3("uAlbedo", glm::vec3(1.0f, 1.0f, 1.0f));
             if (mat->m_Parameters.find("uRoughness") == mat->m_Parameters.end())
@@ -410,12 +414,17 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
     lightingPassShader->SetInt("gAlbedoSpec", 2);
 
-    // Bind Shadow Map to Slot 3
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
     lightingPassShader->SetInt("shadowMap", 3);
     lightingPassShader->SetVec3("viewPos", camera->CameraTransform.position);
     lightingPassShader->SetMat4("lightSpaceMatrix", shadowLightSpaceMatrix);
+
+    // BUG FIX #3: The shader used to guard shadow with (lights[i].type==0 && i==0).
+    // If no directional light existed the condition was never true — shadows were
+    // silently disabled. We always compute a valid lightSpaceMatrix (real or fallback),
+    // so just tell the shader shadows are always active.
+    lightingPassShader->SetBool("uHasShadow", true);
 
     lightingPassShader->SetInt("uLightCount", (int)gpuLights.size());
 
@@ -447,7 +456,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
 
     GLuint targetFBO = framebuffer ? framebuffer->GetFBO() : 0;
 
-    // Blit Depth Buffer so Skybox renders behind objects
     glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, targetFBO);
     glBlitFramebuffer(0, 0, currentWidth, currentHeight,
@@ -472,11 +480,6 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glBindVertexArray(0);
 
     glDepthFunc(GL_LESS);
-
-    // ====================================================
-    // PASS 5: Debug Rendering
-    // ====================================================
-    RenderDebugSkeletons(mDebugSkeletonsToDraw, camera);
 }
 
 void RenderOpenGL::Cleanup()
@@ -542,7 +545,6 @@ void RenderOpenGL::InitSkybox()
     skyboxShader = std::make_unique<Shader>("shaders/Skybox/Skybox.vs", "shaders/Skybox/Skybox.fs");
 
     float skyboxVertices[] = {
-        // positions          
         -1.0f,  1.0f, -1.0f,
         -1.0f, -1.0f, -1.0f,
          1.0f, -1.0f, -1.0f,
@@ -594,8 +596,6 @@ void RenderOpenGL::InitSkybox()
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
-    // Order: Right, Left, Top, Bottom, Front, Back
-    // You need 6 images named appropriately in your assets folder
     std::vector<std::string> faces
     {
         "shaders/Skybox/right.jpg",
@@ -799,27 +799,37 @@ void RenderOpenGL::InitShadowMap()
     glGenTextures(1, &shadowMapTexture);
     glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F,
+        SHADOW_WIDTH, SHADOW_HEIGHT, 0,
+        GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // BUG FIX #5: GL_NEAREST gives hard staircase edges between shadow taps.
+    // GL_LINEAR lets hardware interpolate between texels for smoother PCF.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+    // Clamp to border so areas outside the shadow map are NOT in shadow
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMapTexture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+        GL_TEXTURE_2D, shadowMapTexture, 0);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "[Shadow] Shadow FBO incomplete!" << std::endl;
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 extern "C" {
-	REFLECTION_API System* CreateSystem()
-	{
-		return new RenderOpenGL();
-	}
+    REFLECTION_API System* CreateSystem()
+    {
+        return new RenderOpenGL();
+    }
 
 }

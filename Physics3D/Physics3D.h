@@ -133,6 +133,11 @@ private:
     std::unordered_map<Entity, PxRigidActor*> mEntityActorMap;
     std::vector<CollisionEventData> mCollisionEvents;
 
+    float mAccumulator = 0.0f;
+    float mFixedTimeStep = 1.0f / 60.0f;
+    float mMaxFrameTime = 0.1f;
+    int mMaxSubSteps = 4;
+
     // --- HELPERS ---
     void InitPhysX();
     void CreateActorForEntity(Entity entity);

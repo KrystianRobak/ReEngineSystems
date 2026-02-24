@@ -7,6 +7,7 @@
 #include <iostream>
 #include <algorithm>
 #include <MeshCollider.h>
+#include <cmath>
 
 class UserErrorCallback : public PxErrorCallback {
 public:
@@ -106,7 +107,7 @@ void Physics3D::OnBeginSimulation()
 
     // BUG FIX #2 continued: enable scene-level CCD
     // Without this, fast objects (falling projectiles) skip through thin geometry
-    // in a single timestep — the classic "tunnelling" / pass-through problem.
+    // in a single timestep â€” the classic "tunnelling" / pass-through problem.
     sceneDesc.flags |= PxSceneFlag::eENABLE_CCD;
 
     mScene = mPhysics->createScene(sceneDesc);
@@ -139,7 +140,8 @@ void Physics3D::Update(float dt) {
     if (!mScene) return;
 
     mCollisionEvents.clear();
-    dt = std::min(dt, 0.033f);
+    if (dt < 0.0f) dt = 0.0f;
+    if (dt > mMaxFrameTime) dt = mMaxFrameTime;
 
     FitCollidersToMeshes();
 
@@ -172,9 +174,18 @@ void Physics3D::Update(float dt) {
     // Sync ECS -> PhysX (kinematic overrides, teleports, ECS-driven velocities)
     SyncECSToPhysX();
 
-    // Step simulation
-    mScene->simulate(dt);
-    mScene->fetchResults(true);
+    mAccumulator += dt;
+    int subSteps = 0;
+    while (mAccumulator >= mFixedTimeStep && subSteps < mMaxSubSteps) {
+        mScene->simulate(mFixedTimeStep);
+        mScene->fetchResults(true);
+        mAccumulator -= mFixedTimeStep;
+        subSteps++;
+    }
+    if (subSteps == mMaxSubSteps) {
+        if (mAccumulator > mFixedTimeStep) mAccumulator = mFixedTimeStep;
+    }
+    if (subSteps == 0) return;
 
     // Sync PhysX -> ECS for all awake dynamics
     for (auto& pair : mEntityActorMap) {
@@ -227,7 +238,7 @@ void Physics3D::CreateActorForEntity(Entity entity) {
 
     if (!hasBox && !hasMeshCol) return;
 
-    // Sanitize rotation quaternion — a zero quaternion will crash PhysX
+    // Sanitize rotation quaternion â€” a zero quaternion will crash PhysX
     glm::quat q = tx->rotation;
     if (glm::length(q) < 0.0001f)
         q = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -238,7 +249,7 @@ void Physics3D::CreateActorForEntity(Entity entity) {
     PxRigidActor* actor = nullptr;
 
     // ------------------------------------------------------------------
-    // Mesh Collider (always static — triangle meshes can't be dynamic in PhysX)
+    // Mesh Collider (always static â€” triangle meshes can't be dynamic in PhysX)
     // ------------------------------------------------------------------
     if (hasMeshCol) {
         auto* meshCol = (MeshCollider*)engine_->GetComponent(entity, "MeshCollider");
@@ -296,11 +307,11 @@ void Physics3D::CreateActorForEntity(Entity entity) {
                 dynamic->setRigidDynamicLockFlag(PxRigidDynamicLockFlag::eLOCK_ANGULAR_Z, true);
             }
 
-            // BUG FIX #3 — useGravity flag was never applied to the PhysX actor
+            // BUG FIX #3 â€” useGravity flag was never applied to the PhysX actor
             if (!rb->useGravity)
                 dynamic->setActorFlag(PxActorFlag::eDISABLE_GRAVITY, true);
 
-            // BUG FIX #2 continued — enable CCD on individual dynamic actors
+            // BUG FIX #2 continued â€” enable CCD on individual dynamic actors
             // The scene flag alone is not enough; each dynamic must opt in.
             dynamic->setRigidBodyFlag(PxRigidBodyFlag::eENABLE_CCD, true);
 
@@ -310,14 +321,14 @@ void Physics3D::CreateActorForEntity(Entity entity) {
         }
 
         if (actor) {
-            // BUG FIX #4 — Create material inline with correct values before shape creation
+            // BUG FIX #4 â€” Create material inline with correct values before shape creation
             PxMaterial* shapeMat = (rb && !isStatic)
                 ? mPhysics->createMaterial(rb->friction, rb->friction, rb->restitution)
                 : mDefaultMaterial;
 
             PxShape* shape = mPhysics->createShape(geometry, *shapeMat);
 
-            // BUG FIX #5 — BoxCollider::isTrigger was declared without a default value
+            // BUG FIX #5 â€” BoxCollider::isTrigger was declared without a default value
             // ('bool isTrigger;' = uninitialized garbage memory). This randomly made
             // solid objects behave as triggers (no collision response), causing
             // the "pass-through" symptom. Fixed in BoxCollider.h (= false).
@@ -488,7 +499,7 @@ bool Physics3D::SphereCastSingle(const glm::vec3& origin, float radius, const gl
 std::vector<RaycastHit> Physics3D::SphereCastAll(const glm::vec3& origin, float radius,
     const glm::vec3& direction, float maxDistance, const PhysicsQueryParams& params)
 {
-    // Stub — extend as needed
+    // Stub â€” extend as needed
     return {};
 }
 
@@ -536,7 +547,7 @@ std::vector<Entity> Physics3D::OverlapBox(const glm::vec3& center, const glm::ve
 //  COLLISION / TRIGGER CALLBACKS
 // =============================================================================
 
-// BUG FIX #6 — onContact was completely empty ("// Implement contact logic if needed")
+// BUG FIX #6 â€” onContact was completely empty ("// Implement contact logic if needed")
 // This is the callback PhysX calls for every solid collision pair.
 // Without it populating mCollisionEvents, EVENT_COLLISION_BEGIN was never sent,
 // so SurvivalSystem could never detect projectile-player hits.

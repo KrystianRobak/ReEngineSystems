@@ -17,11 +17,11 @@ struct GPULight {
     glm::vec3 color;
     float intensity;
     int type;
-    // Attenuation
+    
     float constant;
     float linear;
     float quadratic;
-    // Spot
+    
     float cutOff;
     float outerCutOff;
 };
@@ -172,7 +172,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     }
 
     std::vector<GPULight> gpuLights;
-    // Initialize with Identity to prevent garbage data if no lights exist
+    
     glm::mat4 shadowLightSpaceMatrix = glm::mat4(1.0f);
     bool shadowCasterFound = false;
 
@@ -188,7 +188,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
             l.color = lightComp->LightColor;
             l.intensity = lightComp->intensity;
 
-            // Ensure we use the global model matrix for light position/direction
+            
             const glm::mat4& model = ReCamera::GetModelMatrix(*transformComp);
             l.position = glm::vec3(model[3]);
             l.direction = glm::normalize(-glm::vec3(model[2]));
@@ -201,23 +201,23 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
 
             gpuLights.push_back(l);
 
-            // We only use the FIRST directional light for the shadow map
+            
             if (!shadowCasterFound && l.type == (int)LightType::Directional) {
-                // Expanded planes to ensure large scenes are covered
+                
                 float near_plane = 0.1f, far_plane = 1000.0f;
 
-                // Note: The ortho size (175) determines shadow resolution density.
-                // If shadows are pixelated, reduce 175. If shadows clip, increase 175.
+                
+                
                 glm::mat4 lightProjection = glm::ortho(-175.0f, 175.0f, -175.0f, 175.0f, near_plane, far_plane);
 
-                // Use 'Up' vector check to prevent LookAt singularity
+                
                 glm::vec3 upVector = glm::vec3(0, 1, 0);
                 if (glm::abs(l.direction.y) > 0.99f) {
                     upVector = glm::vec3(1, 0, 0);
                 }
 
-                // Center the shadow map slightly ahead of the light position or at world center
-                // Ideally, this should follow the camera, but centering on World (0,0,0) is safe for static scenes.
+                
+                
                 glm::vec3 lookTarget = l.position + l.direction;
                 glm::mat4 lightView = glm::lookAt(l.position, lookTarget, upVector);
 
@@ -231,7 +231,7 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         return a.type < b.type;
         });
 
-    // Fallback if no directional light is found (Prevents shader using identity matrix)
+    
     if (!shadowCasterFound) {
         glm::mat4 lightProjection = glm::ortho(-175.0f, 175.0f, -175.0f, 175.0f, 0.1f, 1000.0f);
         glm::mat4 lightView = glm::lookAt(
@@ -241,23 +241,23 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         shadowLightSpaceMatrix = lightProjection * lightView;
     }
 
-    // ====================================================
-    // PASS 1: Shadow Map (Depth Only)
-    // ====================================================
+    
+    
+    
     glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFBO);
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    // BUG FIX #1: GL_FRONT culling removes flat surfaces (floor) entirely from the shadow map
-    // because flat planes only have top-facing (front) polygons. This makes the floor invisible
-    // to the shadow depth pass -> no shadow can ever appear on it.
-    // Also, for boxes sitting ON the floor, only the bottom face (same depth as floor) was
-    // rendered -> zero depth contrast -> shadow comparison fails even for elevated objects.
-    // Fix: disable culling so ALL faces (including floor top, platform top) write to shadow map.
-    // Hardware polygon offset replaces cull-trick for acne prevention.
+    
+    
+    
+    
+    
+    
+    
     glDisable(GL_CULL_FACE);
     glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(3.0f, 6.0f); // push shadow-map depth away from light to prevent self-shadowing
+    glPolygonOffset(3.0f, 6.0f); 
 
     shadowMapShader->Use();
     shadowMapShader->SetMat4("lightSpaceMatrix", shadowLightSpaceMatrix);
@@ -276,11 +276,11 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
             shadowMapShader->SetBool("uIsAnimated", true);
 
             std::vector<glm::mat4> safeBones = batch.boneMatrices;
-            if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
+            if (safeBones.size() < 100) safeBones.resize(100, glm::mat4(1.0f));
 
             glUniformMatrix4fv(
                 glGetUniformLocation(shadowMapShader->get_program_id(), "finalBones"),
-                200, GL_FALSE, glm::value_ptr(safeBones[0])
+                100, GL_FALSE, glm::value_ptr(safeBones[0])
             );
         }
         else {
@@ -292,16 +292,16 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0, (GLsizei)batch.instanceMatrices.size());
     }
 
-    // BUG FIX #1 (cleanup): disable polygon offset and restore normal backface culling
-    // for all subsequent geometry passes.
+    
+    
     glDisable(GL_POLYGON_OFFSET_FILL);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // ====================================================
-    // PASS 2: Geometry Pass (G-Buffer)
-    // ====================================================
+    
+    
+    
     glViewport(0, 0, currentWidth, currentHeight);
     glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
 
@@ -321,9 +321,11 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
 
         CompiledMaterial* mat = assetManager_->GetMaterial(batch.materialId);
         Shader* currentShader = nullptr;
+        bool useDefaultShader = true;
 
         if (mat && mat->GLShader) {
             currentShader = mat->GLShader.get();
+            useDefaultShader = false;
         }
         else {
             currentShader = geometryPassShader.get();
@@ -333,47 +335,76 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
         currentShader->SetMat4("view", view);
         currentShader->SetMat4("projection", projection);
 
-        bool hasTextures = false;
-
         if (mat) {
             for (auto& [name, value] : mat->m_Parameters) {
                 currentShader->SetVec4(name, value);
             }
+        }
 
-            int texSlot = 0;
-            for (auto& [samplerName, texRes] : mat->textures) {
-                if (texRes && texRes->uploaded) {
-                    glActiveTexture(GL_TEXTURE0 + texSlot);
-                    glBindTexture(GL_TEXTURE_2D, texRes->id);
-                    currentShader->SetInt(samplerName, texSlot);
-                    texSlot++;
-                    hasTextures = true;
+        if (useDefaultShader) {
+            bool hasAlbedoTex = false;
+            bool hasNormalTex = false;
+
+            if (mat) {
+                auto itAlbedo = mat->textures.find("texture_diffuse1");
+                if (itAlbedo != mat->textures.end() && itAlbedo->second && itAlbedo->second->uploaded) {
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, itAlbedo->second->id);
+                    currentShader->SetInt("texture_diffuse1", 0);
+                    hasAlbedoTex = true;
+                } else {
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, 0);
                 }
+
+                auto itNormal = mat->textures.find("texture_normal1");
+                if (itNormal != mat->textures.end() && itNormal->second && itNormal->second->uploaded) {
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, itNormal->second->id);
+                    currentShader->SetInt("texture_normal1", 1);
+                    hasNormalTex = true;
+                } else {
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                }
+            } else {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, 0);
             }
 
-            if (mat->m_Parameters.find("uAlbedo") == mat->m_Parameters.end())
+            if (!mat || mat->m_Parameters.find("uAlbedo") == mat->m_Parameters.end())
                 currentShader->SetVec3("uAlbedo", glm::vec3(1.0f, 1.0f, 1.0f));
-            if (mat->m_Parameters.find("uRoughness") == mat->m_Parameters.end())
+            if (!mat || mat->m_Parameters.find("uRoughness") == mat->m_Parameters.end())
                 currentShader->SetFloat("uRoughness", 0.5f);
-            if (mat->m_Parameters.find("uMetallic") == mat->m_Parameters.end())
+            if (!mat || mat->m_Parameters.find("uMetallic") == mat->m_Parameters.end())
                 currentShader->SetFloat("uMetallic", 0.0f);
-        }
-        else {
-            currentShader->SetVec3("uAlbedo", glm::vec3(0.8f, 0.8f, 0.8f));
-            currentShader->SetFloat("uMetallic", 0.0f);
-            currentShader->SetFloat("uRoughness", 0.5f);
-        }
 
-        currentShader->SetBool("uUseTextures", hasTextures);
+            currentShader->SetBool("uHasAlbedoTex", hasAlbedoTex);
+            currentShader->SetBool("uHasNormalTex", hasNormalTex);
+        } else {
+            int texSlot = 0;
+            if (mat) {
+                for (auto& [samplerName, texRes] : mat->textures) {
+                    if (texRes && texRes->uploaded) {
+                        glActiveTexture(GL_TEXTURE0 + texSlot);
+                        glBindTexture(GL_TEXTURE_2D, texRes->id);
+                        currentShader->SetInt(samplerName, texSlot);
+                        texSlot++;
+                    }
+                }
+            }
+        }
 
         if (!batch.boneMatrices.empty()) {
             currentShader->SetBool("uIsAnimated", true);
             std::vector<glm::mat4> safeBones = batch.boneMatrices;
-            if (safeBones.size() < 200) safeBones.resize(200, glm::mat4(1.0f));
+            if (safeBones.size() < 100) safeBones.resize(100, glm::mat4(1.0f));
 
             GLint loc = glGetUniformLocation(currentShader->get_program_id(), "finalBones");
             if (loc != -1) {
-                glUniformMatrix4fv(loc, 200, GL_FALSE, glm::value_ptr(safeBones[0]));
+                glUniformMatrix4fv(loc, 100, GL_FALSE, glm::value_ptr(safeBones[0]));
             }
         }
         else {
@@ -391,9 +422,9 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // ====================================================
-    // PASS 3: Lighting Pass (Quad Render)
-    // ====================================================
+    
+    
+    
 
     if (framebuffer) framebuffer->bind();
     else glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -420,10 +451,10 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     lightingPassShader->SetVec3("viewPos", camera->CameraTransform.position);
     lightingPassShader->SetMat4("lightSpaceMatrix", shadowLightSpaceMatrix);
 
-    // BUG FIX #3: The shader used to guard shadow with (lights[i].type==0 && i==0).
-    // If no directional light existed the condition was never true — shadows were
-    // silently disabled. We always compute a valid lightSpaceMatrix (real or fallback),
-    // so just tell the shader shadows are always active.
+    
+    
+    
+    
     lightingPassShader->SetBool("uHasShadow", true);
 
     lightingPassShader->SetInt("uLightCount", (int)gpuLights.size());
@@ -450,9 +481,9 @@ void RenderOpenGL::RenderViewport(Camera* camera, Commander* commander, FrameBuf
     RenderQuad();
     glEnable(GL_DEPTH_TEST);
 
-    // ====================================================
-    // PASS 4: Skybox Pass
-    // ====================================================
+    
+    
+    
 
     GLuint targetFBO = framebuffer ? framebuffer->GetFBO() : 0;
 
@@ -803,12 +834,12 @@ void RenderOpenGL::InitShadowMap()
         SHADOW_WIDTH, SHADOW_HEIGHT, 0,
         GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
 
-    // BUG FIX #5: GL_NEAREST gives hard staircase edges between shadow taps.
-    // GL_LINEAR lets hardware interpolate between texels for smoother PCF.
+    
+    
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    // Clamp to border so areas outside the shadow map are NOT in shadow
+    
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -833,3 +864,4 @@ extern "C" {
     }
 
 }
+

@@ -1,4 +1,4 @@
-#include "Animator.h"
+ï»¿#include "Animator.h"
 #include "SkeletalMeshComponent.h"
 #include "SkeletalMeshData.h"
 #include "Animation/Animation.h"
@@ -6,38 +6,27 @@
 #include "Api/AssetManagerApi.h" 
 #include <algorithm>
 #include <iostream>
+#include <cmath>
 
-namespace AnimMath {
-    float GetScaleFactor(float lastTimeStamp, float nextTimeStamp, float animationTime) {
-        float scaleFactor = 0.0f;
-        float midWayLength = animationTime - lastTimeStamp;
-        float framesDiff = nextTimeStamp - lastTimeStamp;
-        scaleFactor = midWayLength / framesDiff;
-        return scaleFactor;
-    }
+static inline float Clamp01(float v)
+{
+    if (v < 0.0f) return 0.0f;
+    if (v > 1.0f) return 1.0f;
+    return v;
+}
 
-    glm::mat4 InterpolatePosition(float animationTime, KeyPosition from, KeyPosition to) {
-        float scaleFactor = GetScaleFactor(from.timeStamp, to.timeStamp, animationTime);
-        glm::vec3 finalPosition = glm::mix(from.position, to.position, scaleFactor);
-        return glm::translate(glm::mat4(1.0f), finalPosition);
-    }
-
-    glm::mat4 InterpolateRotation(float animationTime, KeyRotation from, KeyRotation to) {
-        float scaleFactor = GetScaleFactor(from.timeStamp, to.timeStamp, animationTime);
-        glm::quat finalRotation = glm::slerp(from.orientation, to.orientation, scaleFactor);
-        finalRotation = glm::normalize(finalRotation);
-        return glm::toMat4(finalRotation);
-    }
-
-    glm::mat4 InterpolateScaling(float animationTime, KeyScale from, KeyScale to) {
-        float scaleFactor = GetScaleFactor(from.timeStamp, to.timeStamp, animationTime);
-        glm::vec3 finalScale = glm::mix(from.scale, to.scale, scaleFactor);
-        return glm::scale(glm::mat4(1.0f), finalScale);
-    }
+static inline bool IsFiniteMat4(const glm::mat4& m)
+{
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r)
+            if (!std::isfinite(m[c][r])) return false;
+    return true;
 }
 
 void Animator::Update(float dt)
 {
+    if (!std::isfinite(dt) || dt < 0.0f) dt = 0.0f;
+
     auto assetManager = engine_->GetAssetManager();
 
     for (auto const& entity : mEntities)
@@ -47,33 +36,41 @@ void Animator::Update(float dt)
 
         auto skeletalMesh = std::static_pointer_cast<SkeletalMeshData>(component->MeshResource->cpuMesh);
 
-        // 1. Setup Buffers
+        
         int boneCount = 100;
         if (component->FinalBoneMatrices.empty()) {
             component->FinalBoneMatrices.resize(boneCount, glm::mat4(1.0f));
         }
+        std::fill(component->FinalBoneMatrices.begin(), component->FinalBoneMatrices.end(), glm::mat4(1.0f));
         component->DebugBoneLines.clear();
 
-        // 2. Detect Animation Change
-        // FIX: We only trigger a new blend if we are NOT already blending.
-        // Crucially, we do NOT overwrite LastAnimationName here — it must stay as
-        // the previous animation's name so CalculateBoneTransition can fetch it.
-        // LastAnimationName is only updated to CurrentAnimationName once the blend
-        // fully completes (or immediately if there was no previous animation to blend from).
+        
+        
+        
+        
+        
+        
         if (component->CurrentAnimationName != component->LastAnimationName && !component->IsBlending)
         {
             if (!component->LastAnimationName.empty())
             {
-                // Start a blend from LastAnimationName -> CurrentAnimationName.
-                // LastAnimationName intentionally NOT updated yet — it is used below
-                // as the "previous" animation source throughout the blend duration.
-                component->IsBlending = true;
-                component->BlendTimer = 0.0f;
-                component->HaltTime = component->LastFrameTime;
+                
+                
+                
+                if (component->BlendDuration <= 0.0f) {
+                    component->IsBlending = false;
+                    component->LastAnimationName = component->CurrentAnimationName;
+                    component->CurrentTime = 0.0f;
+                }
+                else {
+                    component->IsBlending = true;
+                    component->BlendTimer = 0.0f;
+                    component->HaltTime = component->LastFrameTime;
+                }
             }
             else
             {
-                // No previous animation — jump cut is fine, sync names immediately.
+                
                 component->LastAnimationName = component->CurrentAnimationName;
             }
         }
@@ -82,23 +79,27 @@ void Animator::Update(float dt)
 
         if (currentAnim)
         {
-            // --- BLENDING LOGIC ---
+            
             if (component->IsBlending)
             {
                 std::shared_ptr<Animation> prevAnim = assetManager->GetAnimation(component->LastAnimationName, skeletalMesh.get());
 
-                // FIX: BlendTimer incremented exactly ONCE per frame.
-                // The original code incremented it twice inside the IsBlending block
-                // (once conditionally, once unconditionally), making blends finish in
-                // half the time and producing a visible jump cut.
-                component->BlendTimer += currentAnim->getTicksPerSecond() * dt;
+                
+                
+                
+                
+                float tps = currentAnim->getTicksPerSecond();
+                if (!std::isfinite(tps) || tps <= 0.0f) tps = 25.0f;
+                component->BlendTimer += tps * dt;
 
-                if (component->BlendTimer >= component->BlendDuration * currentAnim->getTicksPerSecond())
+                float blendDurationTicks = component->BlendDuration * tps;
+                if (component->BlendTimer >= blendDurationTicks)
                 {
-                    // Blend finished — the new animation fully takes over.
+                    
                     component->IsBlending = false;
-                    component->CurrentTime = component->BlendTimer;
-                    // NOW it is safe to sync LastAnimationName so next change is detected.
+                    float leftover = component->BlendTimer - blendDurationTicks;
+                    component->CurrentTime = (leftover > 0.0f) ? leftover : 0.0f;
+                    
                     component->LastAnimationName = component->CurrentAnimationName;
                 }
                 else if (prevAnim)
@@ -113,14 +114,16 @@ void Animator::Update(float dt)
                 }
                 else
                 {
-                    // prevAnim failed to load — abort blend gracefully.
+                    
                     component->IsBlending = false;
                     component->LastAnimationName = component->CurrentAnimationName;
                 }
             }
 
-            // --- NORMAL PLAYBACK ---
-            component->CurrentTime += currentAnim->getTicksPerSecond() * dt * component->AnimationSpeed;
+            
+            float tps = currentAnim->getTicksPerSecond();
+            if (!std::isfinite(tps) || tps <= 0.0f) tps = 25.0f;
+            component->CurrentTime += tps * dt * component->AnimationSpeed;
             float duration = currentAnim->getDuration();
 
             if (duration > 0.0f) {
@@ -138,7 +141,7 @@ void Animator::Update(float dt)
         }
         else
         {
-            // No animation loaded — bind pose.
+            
             std::fill(component->FinalBoneMatrices.begin(), component->FinalBoneMatrices.end(), glm::mat4(1.0f));
         }
 
@@ -146,7 +149,7 @@ void Animator::Update(float dt)
     }
 }
 
-// --- TRANSITION CALCULATOR ---
+
 void Animator::CalculateBoneTransition(const AssimpNodeData* node, glm::mat4 parentTransform,
     SkeletalMeshComponent* component,
     Animation* prevAnim, Animation* nextAnim,
@@ -161,30 +164,29 @@ void Animator::CalculateBoneTransition(const AssimpNodeData* node, glm::mat4 par
 
     if (prevBone && nextBone)
     {
-        // Sample previous animation at the halt time (the frame we froze it on).
         KeyPosition prevPos = prevBone->getPositions(component->HaltTime);
         KeyRotation prevRot = prevBone->getRotations(component->HaltTime);
         KeyScale    prevScl = prevBone->getScalings(component->HaltTime);
 
-        // Sample next animation at time 0 (start of new animation).
-        KeyPosition startNextPos = nextBone->getPositions(0.0f);
-        KeyRotation startNextRot = nextBone->getRotations(0.0f);
-        KeyScale    startNextScl = nextBone->getScalings(0.0f);
+        KeyPosition nextPos = nextBone->getPositions(0.0f);
+        KeyRotation nextRot = nextBone->getRotations(0.0f);
+        KeyScale    nextScl = nextBone->getScalings(0.0f);
 
-        float blendDurationTicks = component->BlendDuration * nextAnim->getTicksPerSecond();
+        float tps = nextAnim->getTicksPerSecond();
+        if (!std::isfinite(tps) || tps <= 0.0f) tps = 25.0f;
+        float blendDurationTicks = component->BlendDuration * tps;
+        float alpha = (blendDurationTicks > 0.0f) ? Clamp01(component->BlendTimer / blendDurationTicks) : 1.0f;
 
-        // Remap timestamps so the interpolation helpers treat BlendTimer as
-        // the interpolant in [0, blendDurationTicks].
-        prevPos.timeStamp = 0.0f;  prevRot.timeStamp = 0.0f;  prevScl.timeStamp = 0.0f;
-        startNextPos.timeStamp = blendDurationTicks;
-        startNextRot.timeStamp = blendDurationTicks;
-        startNextScl.timeStamp = blendDurationTicks;
+        glm::vec3 pos = glm::mix(prevPos.position, nextPos.position, alpha);
+        glm::quat a = prevRot.orientation;
+        glm::quat b = nextRot.orientation;
+        if (glm::dot(a, b) < 0.0f) b = -b;
+        glm::quat rot = glm::normalize(glm::slerp(a, b, alpha));
+        glm::vec3 scl = glm::mix(prevScl.scale, nextScl.scale, alpha);
 
-        glm::mat4 p = AnimMath::InterpolatePosition(component->BlendTimer, prevPos, startNextPos);
-        glm::mat4 r = AnimMath::InterpolateRotation(component->BlendTimer, prevRot, startNextRot);
-        glm::mat4 s = AnimMath::InterpolateScaling(component->BlendTimer, prevScl, startNextScl);
-
-        nodeTransform = p * r * s;
+        nodeTransform = glm::translate(glm::mat4(1.0f), pos) *
+            glm::toMat4(rot) *
+            glm::scale(glm::mat4(1.0f), scl);
     }
 
     glm::mat4 globalTransformation = parentTransform * nodeTransform;
@@ -194,10 +196,11 @@ void Animator::CalculateBoneTransition(const AssimpNodeData* node, glm::mat4 par
 
     if (it != skeletalMesh->boneInfoMap.end()) {
         int index = (int)std::distance(skeletalMesh->boneInfoMap.begin(), it);
-        // FIX: bounds check before write — prevents undefined behaviour / GPU corruption
-        // when a bone index exceeds the FinalBoneMatrices buffer size.
+        
+        
         if (index < (int)component->FinalBoneMatrices.size()) {
-            component->FinalBoneMatrices[index] = globalTransformation * it->offset;
+            glm::mat4 finalMat = globalTransformation * it->offset;
+            component->FinalBoneMatrices[index] = IsFiniteMat4(finalMat) ? finalMat : glm::mat4(1.0f);
         }
     }
 
@@ -214,7 +217,7 @@ std::string GetSuffixAfterDelimiter(const std::string& name, char delimiter)
     return name.substr(pos + 1);
 }
 
-// --- STANDARD CALCULATOR ---
+
 void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 parentTransform,
     SkeletalMeshComponent* component, Animation* animation,
     std::shared_ptr<SkeletalMeshData> skeletalMesh)
@@ -236,13 +239,14 @@ void Animator::CalculateBoneTransform(const AssimpNodeData* node, glm::mat4 pare
     if (boneIndex >= 0)
     {
         auto& boneProps = animation->getBoneProps();
-        // FIX: Double bounds check — boneIndex must be valid in BOTH the boneProps array
-        // AND FinalBoneMatrices. Without this, an out-of-range write corrupts GPU buffer
-        // data, causing the mesh to vanish or explode at animation end.
+        
+        
+        
         if (boneIndex < (int)boneProps.size() &&
             boneIndex < (int)component->FinalBoneMatrices.size())
         {
-            component->FinalBoneMatrices[boneIndex] = globalTransformation * boneProps[boneIndex].offset;
+            glm::mat4 finalMat = globalTransformation * boneProps[boneIndex].offset;
+            component->FinalBoneMatrices[boneIndex] = IsFiniteMat4(finalMat) ? finalMat : glm::mat4(1.0f);
         }
     }
 
@@ -269,3 +273,5 @@ int Animator::GetBoneIndex(Animation* anim, const std::string& nodeName)
 }
 
 extern "C" REFLECTION_API System* CreateSystem() { return new Animator(); }
+
+

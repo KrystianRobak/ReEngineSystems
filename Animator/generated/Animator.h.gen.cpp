@@ -32,7 +32,7 @@ struct Animator_AutoRegister {
                 false,
                 offsetof(Animator, ComponentsToRegister),
                 vType,
-                "SkeletalMeshComponent"
+                "SkeletalMeshComponent, StateMachine"
             };
             Animator_Variables.push_back(std::move(rv));
         }

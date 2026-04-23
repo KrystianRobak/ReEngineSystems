@@ -17,7 +17,7 @@ class REFLECTION_API Animator : public System
 {
 public:
     REFVARIABLE()
-        std::vector<std::string> ComponentsToRegister = { "SkeletalMeshComponent" };
+        std::vector<std::string> ComponentsToRegister = { "SkeletalMeshComponent, StateMachine" };
 
     REFVARIABLE()
         std::vector<std::string> SystemsToRunAfter = { "StateMachineSystem", "Physics3D" };

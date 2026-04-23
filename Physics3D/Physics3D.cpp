@@ -206,10 +206,11 @@ void Physics3D::Update(float dt) {
             engine_->MarkEntityDirty(entity, "Transform");
         }
 
-        RigidBody* rb = (RigidBody*)engine_->GetComponent(entity, "RigidBody");
+        RigidBody* rb = (RigidBody*)engine_->GetComponentForWrite(entity, "RigidBody");
         if (rb) {
             rb->velocity = ToGlmVec3(dynamic->getLinearVelocity());
             rb->angularVelocity = ToGlmVec3(dynamic->getAngularVelocity());
+            engine_->MarkEntityDirty(entity, "RigidBody");
         }
     }
 
@@ -229,12 +230,12 @@ void Physics3D::Update(float dt) {
 void Physics3D::CreateActorForEntity(Entity entity) {
     if (!mScene) return;
 
-    auto* tx = (Transform*)engine_->GetComponent(entity, "Transform");
+    auto* tx = (Transform*)engine_->GetComponentForWrite(entity, "Transform");
     if (!tx) return;
 
     bool hasBox = engine_->HasComponent(entity, "BoxCollider");
     bool hasMeshCol = engine_->HasComponent(entity, "MeshCollider");
-    auto* rb = (RigidBody*)engine_->GetComponent(entity, "RigidBody");
+    auto* rb = (RigidBody*)engine_->GetComponentForWrite(entity, "RigidBody");
 
     if (!hasBox && !hasMeshCol) return;
 
@@ -373,8 +374,8 @@ void Physics3D::SyncECSToPhysX() {
         if (actor->getType() == PxActorType::eRIGID_STATIC) continue;
 
         PxRigidDynamic* dynamic = (PxRigidDynamic*)actor;
-        auto* tx = (Transform*)engine_->GetComponent(entity, "Transform");
-        auto* rb = (RigidBody*)engine_->GetComponent(entity, "RigidBody");
+        auto* tx = (Transform*)engine_->GetComponentForWrite(entity, "Transform");
+        auto* rb = (RigidBody*)engine_->GetComponentForWrite(entity, "RigidBody");
 
         if (!tx || !rb) continue;
 

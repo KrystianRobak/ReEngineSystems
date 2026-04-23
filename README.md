@@ -4,7 +4,7 @@ Loadable runtime systems for `ReEngine`.
 
 This directory contains the separately compiled engine modules used by the main runtime. These projects are not standalone applications. They build DLLs that extend the core engine with rendering, physics, animation, and other optional systems loaded at startup.
 
-ReEngine Systems can be found here: https://github.com/KrystianRobak/ReEngine
+ReEngine can be found here: https://github.com/KrystianRobak/ReEngine
 
 ## What This Folder Is For
 
